@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../rules.schema.json
+# 逆方向の検証: 明細の申請ID はヘッダ（別ファイル）に存在すること
+#   fieldcheck validate samples/cross/claim-lines.csv -r samples/cross/lines-rules.yaml
+version: 1
+name: 明細の参照整合性
+datasets:
+  申請:
+    file: claims.csv
+masters:
+  申請ID:
+    dataset: 申請
+    key: 申請ID
+rules:
+  - id: LN-001
+    type: reference
+    field: 申請ID
+    master: 申請ID
+  - id: LN-002
+    type: unique
+    fields: [申請ID, 行]
+  - id: LN-003
+    type: range
+    field: 金額
+    min: 1

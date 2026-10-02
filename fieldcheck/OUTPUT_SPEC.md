@@ -1,0 +1,46 @@
+# fieldcheck 出力仕様
+
+`fieldcheck validate` のレポートは、全ツール共通の
+[レポート出力形式 仕様書](https://github.com/shoyo-maya-bot/devtools-common/blob/main/docs/REPORT_FORMAT.md)
+（schema_version 1.x）に従います。ここでは fieldcheck 固有の部分を定めます。
+
+## meta
+
+| キー | 型 | 出る条件 | 内容 |
+|---|---|---|---|
+| `input` | 文字列 | 常に | 入力ファイル名 |
+| `rules` | 文字列 | 常に | `ルールセット名 (ルール数)` |
+| `records` | 数値 | 常に | 評価したレコード数 |
+| `table` | 文字列 | `--table` 指定時 | 選んだ Markdown の表 |
+| `datasets` | 文字列 | 参照データセットがあるとき | データセット名（`, ` 区切り） |
+| `truncated` | 文字列 | `--max-findings` で打ち切ったとき | 打ち切りの説明 |
+
+## findings
+
+| キー | fieldcheck での意味 |
+|---|---|
+| `rule_id` | ルールファイルの `id`（例: `EXP-003`）。入力の型誤りは `schema.type` |
+| `severity` | ルールの `severity`（既定 `error`）。`schema.type` は常に `error` |
+| `message` | ルールの `message`（無ければ自動生成） |
+| `location` | CSV / TSV / Markdown: `row N`（見出し行を除いたデータ行の 1 始まり）/ JSON・YAML: `record N` / JSON Lines: `line N` |
+| `field` | 対象の項目。複数項目のルールは `,` 区切り（例: `終了日,開始日`、unique は `k1,k2`） |
+| `expected` / `actual` | 期待値と実測値（`expression` は式と、参照した項目の値 `項目=値, …`） |
+| `suggestion` | ルールの `suggestion`（無ければ自動生成、または空） |
+
+`findings` の順序は「レコードの順 → 同じレコード内ではルールファイルの記述順」です。
+
+### 同じ項目の二重指摘を抑止する
+
+`fields:` で型を宣言した項目に型の合わない値があると `schema.type` を出し、
+**そのレコードのその項目については他のルールの指摘を出しません**（原因が 1 つなのに指摘が並ぶのを防ぐ）。
+
+## 終了コード
+
+| コード | 条件 |
+|---|---|
+| 0 | `--fail-on`（既定 `error`）以上の指摘が無い |
+| 1 | `--fail-on` 以上の指摘がある |
+| 2 | ルールファイルがスキーマに適合しない、式の構文誤り、入力に必要な列が無い（**評価前に停止**）、データセットが無い、未対応の入力形式 |
+| 3 | 想定外のエラー |
+
+終了コード 2 のときレポートは出ません（理由は標準エラー）。データではなく **前提**（ルール・列名・パス）を直してください。

@@ -1,0 +1,10 @@
+__pycache__/
+*.egg-info/
+.venv/
+.ruff_cache/
+.pytest_cache/
+.env
+.env.*
+!.env.example
+reviews/dashboard.html
+triage.json

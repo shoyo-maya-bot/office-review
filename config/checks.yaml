@@ -1,0 +1,308 @@
+# レビュー観点の唯一の正（SSOT）
+# - id: <種別略号>-<連番 3 桁>。一度付けた ID は変えない（採択率の履歴が ID に紐づくため）
+# - types: 適用する文書の種別（api / batch / external-if / common / oas / architecture / db / all）
+# - role: 主に見る役割（architect / infra / spec_manager / dba / ops）
+# - severity: 指摘したときの既定の重要度（MUST 必須 / WANT 推奨 / NITS 軽微）。Q（質問）は観点ではなく個別に付ける
+# - invalid_when: この観点を当てはめてはいけないケース（誤指摘を減らすため。AI はこれに当たる場合は指摘しない）
+# - machine: 機械で確かめられる部分（harness precheck が使う）。無ければ AI と人だけが見る
+# 観点を足すときは docs/WORKFLOW.md の「チェックリストを育てる」に従い、PR でレビューを受ける
+version: 1
+roles:
+  architect: { name: アーキテクト, focus: 責務分担・方式・再利用・拡張性 }
+  infra: { name: インフラ, focus: 性能・可用性・セキュリティ・ネットワーク }
+  spec_manager: { name: 仕様管理, focus: 業務要件との整合・記載の網羅と一貫性 }
+  dba: { name: DBA, focus: テーブル設計・SQL・トランザクション・データ量 }
+  ops: { name: 運用, focus: 監視・ログ・障害時の手順・ジョブ運用 }
+
+checks:
+  # ---------------- 全種別共通 ----------------
+  - id: ALL-001
+    types: [all]
+    role: spec_manager
+    category: 文書管理
+    severity: MUST
+    title: 文書 ID・版・承認状態が明記されている
+    viewpoint: Front Matter（または表紙）に id・版数・status があり、改版履歴が最新版と一致している
+    invalid_when: 作成途中のドラフトで、レビュー依頼の時点で status を draft と明示している場合
+    machine: { kind: front_matter, keys: [id, title] }
+  - id: ALL-002
+    types: [all]
+    role: spec_manager
+    category: 用語
+    severity: WANT
+    title: 用語が用語集と一致し、同じものを別の言葉で呼んでいない
+    viewpoint: 同じ概念に複数の呼び方（例「会員」「ユーザー」）が混在していない。用語集（docs/references/）にある語を使っている
+    invalid_when: 引用した外部仕様の原文表記をそのまま残している場合（引用である旨が書かれていること）
+  - id: ALL-003
+    types: [all]
+    role: spec_manager
+    category: 記載の明確さ
+    severity: MUST
+    title: 「など」「適宜」「必要に応じて」で範囲がぼかされていない
+    viewpoint: 処理対象・条件・値の範囲が列挙または条件式で確定している
+    invalid_when: 例示であることが明記され、確定した一覧が別の箇所にある場合
+  - id: ALL-004
+    types: [all]
+    role: spec_manager
+    category: 未決事項
+    severity: MUST
+    title: 未決事項（TBD・要確認）が一覧化され、期限と担当がある
+    viewpoint: 本文中の TBD・要確認・検討中が、未決事項表に期限と担当付きで載っている
+    invalid_when: 該当工程の対象外と明記して次工程に送っている場合
+  - id: ALL-005
+    types: [all]
+    role: architect
+    category: 整合性
+    severity: MUST
+    title: 上位文書（要件定義・基本設計）と矛盾していない
+    viewpoint: 機能・項目・条件が上位文書の記載と一致している。差異がある場合は理由と上位文書の修正依頼がある
+    invalid_when: 上位文書の改版が承認済みで、本書がその改版に追随している場合
+
+  # ---------------- API ----------------
+  - id: API-001
+    types: [api]
+    role: spec_manager
+    category: インタフェース
+    severity: MUST
+    title: API ID・メソッド・パス・認証要否が一覧にある
+    viewpoint: 各 API について ID、HTTP メソッド、パス、認証の要否が表で定義されている
+    invalid_when: なし
+    machine: { kind: heading, pattern: "概要|API 一覧|一覧" }
+  - id: API-002
+    types: [api]
+    role: spec_manager
+    category: 入力定義
+    severity: MUST
+    title: 入力項目に必須・型・桁・形式・前処理がある
+    viewpoint: 入力項目表に「必須」「形式（型）」「桁」があり、前後空白の除去や大文字小文字の扱いなど前処理が書かれている
+    invalid_when: 入力の無い API（パラメータなしの照会など）
+    machine: { kind: table_columns, columns: [項目, 必須, 形式, 桁] }
+  - id: API-003
+    types: [api]
+    role: spec_manager
+    category: 応答定義
+    severity: MUST
+    title: 結果ごとの HTTP ステータスとメッセージ ID が定義されている
+    viewpoint: 正常・入力誤り・該当なし・業務エラー・システムエラーのそれぞれに、ステータスとメッセージ ID がある
+    invalid_when: 共通のエラー仕様書に委ねると明記し、その文書を参照している場合
+  - id: API-004
+    types: [api]
+    role: architect
+    category: 冪等性
+    severity: MUST
+    title: 更新系 API の再送時の動きが決まっている
+    viewpoint: POST / PUT / DELETE がタイムアウト等で再送されたとき、二重登録・二重更新にならない方式（冪等キー・一意制約など）が書かれている
+    invalid_when: 参照系（GET）のみの API
+  - id: API-005
+    types: [api]
+    role: infra
+    category: 性能
+    severity: WANT
+    title: 想定件数・応答時間・同時実行数がある
+    viewpoint: 1 回あたりの最大件数、目標応答時間、ピーク時の同時リクエスト数が書かれている
+    invalid_when: 非機能要件書で API 共通の値として定義され、その参照がある場合
+  - id: API-006
+    types: [api]
+    role: infra
+    category: セキュリティ
+    severity: MUST
+    title: 認可（誰がどのデータにアクセスできるか）が書かれている
+    viewpoint: 他人のデータを ID 指定で取得できないなど、リソース単位の認可条件が書かれている
+    invalid_when: 認証不要で公開して問題ない情報だけを返す API（その旨が明記されていること）
+  - id: API-007
+    types: [api]
+    role: dba
+    category: データアクセス
+    severity: WANT
+    title: 参照・更新するテーブルと条件が書かれている
+    viewpoint: CRUD 表または処理手順に、テーブル名・操作・検索条件・ロックの要否がある
+    invalid_when: 外部システムへの中継だけで DB を使わない API
+
+  # ---------------- バッチ ----------------
+  - id: BAT-001
+    types: [batch]
+    role: ops
+    category: 起動
+    severity: MUST
+    title: ジョブ ID・起動タイミング・起動引数・前後関係がある
+    viewpoint: スケジュール（時刻・カレンダー）、起動引数（パラメータファイル名を含む）、先行・後続ジョブが書かれている
+    invalid_when: なし
+  - id: BAT-002
+    types: [batch]
+    role: spec_manager
+    category: 入出力
+    severity: MUST
+    title: 入出力ファイルの場所・形式・文字コード・見出しがある
+    viewpoint: 入出力ごとに配置場所、形式（CSV 等）、文字コード、改行、見出し行の有無、レイアウトが定義されている
+    invalid_when: DB のみを入出力とするバッチ
+  - id: BAT-003
+    types: [batch]
+    role: spec_manager
+    category: 処理手順
+    severity: MUST
+    title: 処理が STEP 単位で書かれ、各 STEP の入力・処理・出力が分かる
+    viewpoint: STEP 見出しごとに、何を入力に、何をして、何を出すかが書かれている
+    invalid_when: なし
+    machine: { kind: heading, pattern: "STEP ?[0-9０-９]" }
+  - id: BAT-004
+    types: [batch]
+    role: ops
+    category: エラー処理
+    severity: MUST
+    title: エラー時の扱い（続行か停止か）と終了コードがある
+    viewpoint: 形式エラーの行を飛ばすか全体を止めるか、終了コードの体系、出力するメッセージ ID が書かれている
+    invalid_when: なし
+  - id: BAT-005
+    types: [batch]
+    role: ops
+    category: 再実行
+    severity: MUST
+    title: 再実行時の動き（冪等性・リカバリ手順）が書かれている
+    viewpoint: 途中で異常終了した後に再実行したとき、二重登録しない方式と、運用者の手順が書かれている
+    invalid_when: 参照だけで更新しないバッチ
+  - id: BAT-006
+    types: [batch]
+    role: dba
+    category: トランザクション
+    severity: MUST
+    title: コミット単位とロックの影響が書かれている
+    viewpoint: 全件 1 コミットか N 件ごとか、オンラインと同時に動くときのロック競合の扱いが書かれている
+    invalid_when: 更新件数が少なく、オンライン停止中にだけ動くと明記されている場合
+  - id: BAT-007
+    types: [batch]
+    role: infra
+    category: 性能
+    severity: WANT
+    title: 想定件数と処理時間の目安・打ち切り時間がある
+    viewpoint: 通常・ピーク時の件数、処理時間の目安、後続に間に合う打ち切り時刻が書かれている
+    invalid_when: なし
+
+  # ---------------- 外部インタフェース ----------------
+  - id: EIF-001
+    types: [external-if]
+    role: architect
+    category: 責務分担
+    severity: MUST
+    title: 相手システムとの役割分担・方式・タイミングが書かれている
+    viewpoint: どちらが送りどちらが受けるか、同期 / 非同期、ファイル / API、頻度・時刻が書かれている
+    invalid_when: なし
+  - id: EIF-002
+    types: [external-if]
+    role: spec_manager
+    category: 項目定義
+    severity: MUST
+    title: 項目のマッピング（相手の項目 ↔ 自システムの項目）と変換規則がある
+    viewpoint: 項目ごとの対応、コード値の変換表、桁・型の違いの扱いが書かれている
+    invalid_when: 相手の仕様をそのまま保存するだけで変換しない場合（その旨が明記されていること）
+  - id: EIF-003
+    types: [external-if]
+    role: ops
+    category: 障害時
+    severity: MUST
+    title: 相手側の障害・遅延・不正データ時の扱いがある
+    viewpoint: タイムアウト、リトライ回数と間隔、受信データ不正時の扱い、連絡先と手順が書かれている
+    invalid_when: なし
+  - id: EIF-004
+    types: [external-if]
+    role: infra
+    category: セキュリティ
+    severity: MUST
+    title: 通信経路・認証方式・暗号化が書かれている
+    viewpoint: 接続経路（専用線 / インターネット）、認証（証明書・トークン）、暗号化、鍵の管理者が書かれている
+    invalid_when: なし
+
+  # ---------------- 共通部品 ----------------
+  - id: COM-001
+    types: [common]
+    role: architect
+    category: 責務
+    severity: MUST
+    title: 部品の責務と利用条件・利用してはいけないケースがある
+    viewpoint: 何をする部品か、前提条件、使ってはいけない場面（性能・トランザクションの制約など）が書かれている
+    invalid_when: なし
+  - id: COM-002
+    types: [common]
+    role: architect
+    category: インタフェース
+    severity: MUST
+    title: 引数・戻り値・例外と、その使用例がある
+    viewpoint: 公開メソッドごとに引数・戻り値・投げる例外があり、呼び出し例が 1 つ以上ある
+    invalid_when: なし
+
+  # ---------------- OAS（OpenAPI） ----------------
+  - id: OAS-001
+    types: [oas]
+    role: spec_manager
+    category: 整合性
+    severity: MUST
+    title: OAS と API 設計書の項目・必須・型・桁が一致している
+    viewpoint: design-diff の差分レポートで差異が 0、または差異ごとに理由がある
+    invalid_when: なし
+  - id: OAS-002
+    types: [oas]
+    role: spec_manager
+    category: 応答定義
+    severity: MUST
+    title: 全てのエラー応答（4xx / 5xx）が responses に定義されている
+    viewpoint: 設計書のエラー表のステータスが OAS の responses に全てある
+    invalid_when: なし
+  - id: OAS-003
+    types: [oas]
+    role: spec_manager
+    category: 記載
+    severity: WANT
+    title: description と example が全項目にある
+    viewpoint: 各プロパティに description（日本語）と example がある
+    invalid_when: 自明な項目（id など）で、チームの規約が省略を認めている場合
+
+  # ---------------- アーキテクチャ（基本設計の章） ----------------
+  - id: ARC-001
+    types: [architecture]
+    role: architect
+    category: 方式
+    severity: MUST
+    title: 方式の選定理由と、却下した案が書かれている
+    viewpoint: 採用した方式ごとに、比較した案、評価軸、選定理由がある
+    invalid_when: 全社標準として決まっている方式を使う場合（標準の参照があること）
+  - id: ARC-002
+    types: [architecture]
+    role: infra
+    category: 可用性
+    severity: MUST
+    title: 単一障害点と、障害時の切り替え・復旧目標がある
+    viewpoint: 構成要素ごとの冗長化、切り替え方式、RTO / RPO が書かれている
+    invalid_when: 開発・検証環境のみを対象とする章
+  - id: ARC-003
+    types: [architecture]
+    role: ops
+    category: 監視
+    severity: WANT
+    title: 監視項目・閾値・通知先がある
+    viewpoint: 何を（死活・リソース・業務エラー）、どの閾値で、誰に通知するかが書かれている
+    invalid_when: 運用設計書に委ねると明記している場合
+
+  # ---------------- DB（基本設計の章） ----------------
+  - id: DB-001
+    types: [db]
+    role: dba
+    category: テーブル設計
+    severity: MUST
+    title: 主キー・一意制約・外部キー・インデックスとその理由がある
+    viewpoint: テーブルごとに主キー、一意制約、外部キー、インデックスと、それが必要な検索・更新が書かれている
+    invalid_when: なし
+  - id: DB-002
+    types: [db]
+    role: dba
+    category: データ量
+    severity: WANT
+    title: 件数の見積もりと保持期間・削除方法がある
+    viewpoint: 初期件数・増加量・保持期間・削除（パージ）方法が書かれている
+    invalid_when: マスタなど件数が少なく増えないテーブル
+  - id: DB-003
+    types: [db]
+    role: infra
+    category: 個人情報
+    severity: MUST
+    title: 個人情報・機密項目と、その保護（暗号化・マスキング・アクセス権）がある
+    viewpoint: 個人情報に当たる列が特定され、保存時の暗号化、画面・ログでのマスキング、参照権限が書かれている
+    invalid_when: 個人情報を持たないテーブル（その旨が明記されていること）
