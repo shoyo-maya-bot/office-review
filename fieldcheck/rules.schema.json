@@ -1,0 +1,842 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "field-validation rules",
+  "type": "object",
+  "required": [
+    "rules"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "fields": {
+      "type": "object",
+      "description": "入力スキーマ（前提）。列が無ければ早期エラー、型が合わなければ schema.type 指摘",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "number",
+              "date",
+              "string"
+            ]
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "datasets": {
+      "type": "object",
+      "description": "参照する別の表（他シート・他ファイル）。パスはルールファイルからの相対",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "table": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Markdown の表（番号か直前の見出し名）"
+          },
+          "encoding": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "masters": {
+      "type": "object",
+      "description": "reference ルールで使うキーの一覧。ファイル・datasets の列・値の列挙のいずれか",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "table": {
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "dataset": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array"
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "file",
+              "key"
+            ]
+          },
+          {
+            "required": [
+              "dataset",
+              "key"
+            ]
+          },
+          {
+            "required": [
+              "values"
+            ]
+          }
+        ],
+        "additionalProperties": false
+      }
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "aggregate_equals",
+              "compare",
+              "enum",
+              "expression",
+              "length",
+              "pattern",
+              "range",
+              "reference",
+              "required",
+              "sum_equals",
+              "unique"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "aggregate_equals"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "field": {
+                  "type": "string",
+                  "description": "この表の比較する項目（例: 合計）"
+                },
+                "group_by": {
+                  "type": "string",
+                  "description": "この表の突き合わせキー（例: 申請ID）"
+                },
+                "dataset": {
+                  "type": "string",
+                  "description": "集計する別の表（datasets: の名前）"
+                },
+                "dataset_group_by": {
+                  "type": "string",
+                  "description": "別の表の突き合わせキー（既定: group_by と同じ）"
+                },
+                "dataset_field": {
+                  "type": "string",
+                  "description": "別の表の集計する項目（count では不要）"
+                },
+                "func": {
+                  "enum": [
+                    "sum",
+                    "count",
+                    "min",
+                    "max"
+                  ]
+                },
+                "tolerance": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "missing": {
+                  "enum": [
+                    "error",
+                    "zero",
+                    "ignore"
+                  ],
+                  "description": "別の表にキーが無いとき（既定 error）"
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "field",
+                "group_by",
+                "dataset"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "compare"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "left": {
+                  "type": "string"
+                },
+                "op": {
+                  "enum": [
+                    "==",
+                    "!=",
+                    "<",
+                    "<=",
+                    ">",
+                    ">="
+                  ]
+                },
+                "right": {
+                  "type": "string"
+                },
+                "value": {}
+              },
+              "required": [
+                "id",
+                "type",
+                "left",
+                "op"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "enum"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "values": {
+                  "type": "array",
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "field",
+                "values"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "expression"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "assert": {
+                  "type": "string",
+                  "description": "成り立つべき式（Python の式の安全なサブセット）"
+                },
+                "skip_blank": {
+                  "type": "boolean",
+                  "description": "式が参照する項目に空欄があれば評価しない（既定 true）"
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "assert"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "length"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "min": {
+                  "type": "integer"
+                },
+                "max": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "field"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "pattern"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "regex": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "field",
+                "regex"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "range"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "min": {},
+                "max": {}
+              },
+              "required": [
+                "id",
+                "type",
+                "field"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "reference"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "master": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "field",
+                "master"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "required"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "fields"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "sum_equals"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "total": {
+                  "type": "string"
+                },
+                "parts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "tolerance": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "total",
+                "parts"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "unique"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning",
+                    "info"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "when": {
+                  "$ref": "#/$defs/condition"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "fields"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "condition": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "equals": {},
+        "not_equals": {},
+        "in": {
+          "type": "array"
+        },
+        "not_in": {
+          "type": "array"
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "gt": {},
+        "gte": {},
+        "lt": {},
+        "lte": {},
+        "all": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/condition"
+          }
+        },
+        "any": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/condition"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

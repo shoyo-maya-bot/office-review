@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../rules.schema.json
+# 表をまたぐ検証のサンプル: 申請（ヘッダ）と明細（別ファイル）
+#   fieldcheck validate samples/cross/claims.csv -r samples/cross/rules.yaml
+version: 1
+name: 申請ヘッダと明細の整合性
+
+fields:
+  申請ID: {type: string}
+  開始日: {type: date}
+  終了日: {type: date}
+  合計: {type: number}
+
+datasets:
+  明細:
+    file: claim-lines.csv     # ルールファイルからの相対。実行時に --dataset 明細=別のファイル で差し替え可
+
+masters:
+  申請ID一覧:
+    dataset: 明細
+    key: 申請ID
+
+rules:
+  - id: CR-001
+    description: ヘッダの合計 = 明細の金額の合計（申請ID ごと）
+    type: aggregate_equals
+    field: 合計
+    group_by: 申請ID
+    dataset: 明細
+    dataset_field: 金額
+    func: sum
+
+  - id: CR-002
+    description: 期間の整合性（終了日は開始日以降、30 日以内）
+    type: expression
+    assert: "0 <= days(終了日, 開始日) <= 30"
+    message: 期間が不正です（終了日は開始日以降、30 日以内）
+
+  - id: CR-003
+    description: 状態は決められた値のみ
+    type: enum
+    field: 状態
+    values: [申請中, 承認済, 差戻し]

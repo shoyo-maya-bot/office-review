@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=../../rules.schema.json
+# doc2md で Markdown にした実務の Excel（2 段見出し・合計行・別表あり）を検証するサンプル
+#   doc2md expense-ledger.xlsx -d samples/ledger/
+#   fieldcheck validate samples/ledger/expense-ledger.md --table "表1（A4:G10）" -r samples/ledger/rules.yaml
+version: 1
+name: 経費精算台帳（Excel 由来）
+
+fields:
+  申請ID: {type: string}
+  申請日: {type: date}
+  金額/税抜: {type: number}
+  金額/税額: {type: number}
+  金額/税込: {type: number}
+
+datasets:
+  区分表:
+    file: expense-ledger.md
+    table: 表2（J4:K7）          # 同じシートの 2 つ目の表
+
+masters:
+  区分:
+    dataset: 区分表
+    key: 区分
+
+rules:
+  - id: LG-001
+    description: 税込 = 税抜 + 税額（列名に / を含むので value() で参照）
+    type: expression
+    assert: 'value("金額/税込") == value("金額/税抜") + value("金額/税額")'
+
+  - id: LG-002
+    description: 税額 = 税抜の 10%（端数切り捨て）
+    type: expression
+    when: {field: 申請ID, not_equals: 合計}
+    assert: 'value("金額/税額") == int(value("金額/税抜") * 0.1)'
+
+  - id: LG-003
+    description: 合計行以外は承認者が必須
+    type: required
+    when: {field: 申請ID, not_equals: 合計}
+    fields: [承認者]
+
+  - id: LG-004
+    description: 区分は区分表（同じシートの別表）に存在
+    type: reference
+    when: {field: 申請ID, not_equals: 合計}
+    field: 区分
+    master: 区分

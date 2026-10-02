@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "tool": "fieldcheck",
+  "tool_version": "0.1.0",
+  "title": "fieldcheck 検証レポート",
+  "meta": {
+    "input": "expense-list.md",
+    "rules": "経費申請の整合性 (9)",
+    "records": 5,
+    "table": "申請一覧"
+  },
+  "summary": {
+    "error": 4,
+    "warning": 1,
+    "info": 0
+  },
+  "findings": [
+    {
+      "rule_id": "EXP-003",
+      "severity": "error",
+      "message": "合計 が 金額 + 税額 と一致しません",
+      "location": "row 2",
+      "field": "合計",
+      "expected": "8800",
+      "actual": "8900",
+      "suggestion": "合計 または内訳（金額, 税額）を確認してください"
+    },
+    {
+      "rule_id": "EXP-002",
+      "severity": "error",
+      "message": "接待費は承認者が必須です",
+      "location": "row 3",
+      "field": "承認者",
+      "expected": "値あり",
+      "actual": "(空)",
+      "suggestion": "事前承認者を入力してください"
+    },
+    {
+      "rule_id": "EXP-009",
+      "severity": "warning",
+      "message": "2 万円を超える申請です",
+      "location": "row 3",
+      "field": "金額",
+      "expected": "金額 <= 20000",
+      "actual": "30000 / 20000",
+      "suggestion": "領収書の添付を確認してください"
+    },
+    {
+      "rule_id": "EXP-004",
+      "severity": "error",
+      "message": "金額 が範囲外です",
+      "location": "row 4",
+      "field": "金額",
+      "expected": "0〜1000000",
+      "actual": "-500",
+      "suggestion": "値または入力単位を確認してください"
+    },
+    {
+      "rule_id": "EXP-005",
+      "severity": "error",
+      "message": "部門コード がマスタ「部門」に存在しません",
+      "location": "row 4",
+      "field": "部門コード",
+      "expected": "部門 のキー",
+      "actual": "D99",
+      "suggestion": "コードの誤記、またはマスタへの登録漏れを確認してください"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=../rules.schema.json
+# 経費申請データの整合性ルール（サンプル。題材・値はすべて架空）
+version: 1
+name: 経費申請の整合性
+
+# 入力スキーマ（前提）: 列が無ければ早期エラー（終了コード 2）、型が合わなければ schema.type 指摘
+fields:
+  申請ID: {type: string}
+  申請日: {type: date}
+  区分: {type: string}
+  金額: {type: number}
+  税額: {type: number}
+  合計: {type: number}
+  承認者: {type: string}
+  部門コード: {type: string}
+
+masters:
+  部門:
+    file: masters/departments.csv
+    key: 部門コード
+  経費区分:
+    values: [交通費, 宿泊費, 接待費, 消耗品]
+
+rules:
+  - id: EXP-001
+    type: required
+    fields: [申請ID, 申請日, 区分, 金額, 合計]
+
+  - id: EXP-002
+    description: A が X なら B は必須
+    type: required
+    when: {field: 区分, equals: 接待費}
+    fields: [承認者]
+    message: 接待費は承認者が必須です
+    suggestion: 事前承認者を入力してください
+
+  - id: EXP-003
+    description: 合計 = 内訳の和
+    type: sum_equals
+    total: 合計
+    parts: [金額, 税額]
+
+  - id: EXP-004
+    type: range
+    field: 金額
+    min: 0
+    max: 1000000
+
+  - id: EXP-005
+    description: コードはマスタに存在
+    type: reference
+    field: 部門コード
+    master: 部門
+
+  - id: EXP-006
+    type: reference
+    field: 区分
+    master: 経費区分
+
+  - id: EXP-007
+    type: unique
+    fields: [申請ID]
+
+  - id: EXP-008
+    type: pattern
+    field: 申請ID
+    regex: 'A-\d{3}'
+
+  - id: EXP-009
+    description: 高額申請は注意喚起（warning）
+    type: compare
+    when: {field: 区分, not_in: [宿泊費]}
+    left: 金額
+    op: "<="
+    value: 20000
+    severity: warning
+    message: 2 万円を超える申請です
+    suggestion: 領収書の添付を確認してください
