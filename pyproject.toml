@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "office-review"
 version = "0.1.0"
 description = "設計資料のレビューを、チェックリスト・マルチロール・指摘の蓄積で育てるレビューハーネス（項目間検証 fieldcheck を同梱）"
+license = "MIT"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
