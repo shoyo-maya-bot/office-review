@@ -10,7 +10,7 @@ license = "MIT"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-  "devtools-common @ git+https://github.com/shoyo-maya-bot/devtools-common.git@bfb7f17c5016966058072f4aba3713ab56d146ba",
+  "devtools-common @ git+https://github.com/shoyo-maya-bot/devtools-common.git@9a652618269e1df6e8f2f451913d247494a945b9",
   "PyYAML>=6.0",
   "jsonschema>=4.18",
 ]
@@ -18,7 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
 # Office の原本を変換するときだけ必要（harness convert）
-convert = ["doc-to-markdown @ git+https://github.com/shoyo-maya-bot/doc-to-markdown.git@98b8ffea669904358f5bd7edc073f0e1ebf3fcfc"]  # 依存は SHA で固定（devtools-common の方針）
+convert = ["doc-to-markdown @ git+https://github.com/shoyo-maya-bot/doc-to-markdown.git@f73257ff9aa826d9c2887eb2d495593bac7e9129"]  # 依存は SHA で固定（devtools-common の方針）
 
 [project.scripts]
 harness = "review_harness.cli:entrypoint"
