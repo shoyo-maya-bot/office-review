@@ -77,3 +77,8 @@ ruff check . && ruff format --check . && pytest
 - [doc-to-markdown](https://github.com/shoyo-maya-bot/doc-to-markdown): Office の設計書を Markdown に（`harness convert` が使う）
 - [design-diff](https://github.com/shoyo-maya-bot/design-diff): 設計書の新旧差分、設計書と OpenAPI の差分（OAS-001 の確認に使う）
 - [quality-analytics](https://github.com/shoyo-maya-bot/quality-analytics): 指摘の傾向分析（reviews/ と data/history.jsonl を読み込める）
+
+## セキュリティ・ライセンス
+
+- 脆弱性を見つけたら、公開の Issue ではなく [SECURITY.md](SECURITY.md) の方法で知らせてください
+- ライセンスは [MIT](LICENSE) です
