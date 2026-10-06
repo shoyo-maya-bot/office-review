@@ -8,3 +8,4 @@ __pycache__/
 !.env.example
 reviews/dashboard.html
 triage.json
+data/convert-reports/
