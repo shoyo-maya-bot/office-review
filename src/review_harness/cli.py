@@ -1,7 +1,8 @@
 """harness — 設計資料レビューの道具（チェックリスト生成・事前チェック・結果の検査・ダッシュボード・蓄積）.
 
 流れ:
-  harness convert 設計書.xlsx --type api            # Office を Markdown にして inputs/api/ へ（doc-to-markdown が必要）
+  harness convert 設計書.xlsx --type api            # Office を Markdown にして inputs/api/ へ（doc-to-markdown が必要。
+                                                    #   変換レポートは data/convert-reports/api/ に残る）
   harness precheck inputs/api/order-api.md --type api   # 機械で確かめられる観点を先に確かめる
   （Copilot Chat で /review inputs/api/order-api.md → reviews/YYYY-MM-DD_order-api_result.md）
   harness lint reviews/                              # レビュー結果の形式チェック
@@ -80,16 +81,46 @@ def cmd_checklists(root: Path, args) -> int:
 
 
 def cmd_convert(root: Path, args) -> int:
+    """doc2md で変換する. doc2md の終了コード（doc-to-markdown の docs/OUTPUT_SPEC.md）:
+
+    0 すべて変換できた（warning があっても 0）/ 1 convert.failed がある（--strict 時は warning も）/
+    2 未対応の形式・入力が無い・外部ツールが無い / 3 想定外のエラー。
+    --strict は付けないので 1 は「変換失敗」。warning（loss.* 等）は表示して data/convert-reports/ に残し、続行する。
+    """
     if shutil.which("doc2md") is None:
         raise common_cli.UsageError("doc2md が見つかりません。doc-to-markdown をインストールしてください")
     import subprocess
 
     dest = root / "inputs" / args.type
-    rc = subprocess.run(["doc2md", str(args.file), "-d", str(dest), "--front-matter"], check=False).returncode
-    if rc not in (0, 1):
-        return common_cli.ExitCode.RUNTIME
-    print(f"→ {dest / (args.file.stem + '.md')}（変換レポートの loss.* を確認してからレビューしてください）")
+    rep_path = root / "data" / "convert-reports" / args.type / f"{args.file.stem}.json"
+    rep_path.parent.mkdir(parents=True, exist_ok=True)
+    rc = subprocess.run(
+        ["doc2md", str(args.file), "-d", str(dest), "--front-matter", "-f", "json", "-o", str(rep_path)], check=False
+    ).returncode
+    findings = _convert_findings(rep_path)
+    if rc != 0:
+        errors = [f for f in findings if f.get("severity") == "error"]
+        detail = "".join(f"\n  {f.get('rule_id', '')}: {f.get('message', '')}" for f in errors)
+        kind = "引数・入力の誤り、または必要な外部ソフトが無い" if rc == 2 else "変換に失敗しました"
+        print(f"error: doc2md: {args.file.name} の{kind}（終了コード {rc}）{detail}", file=sys.stderr)
+        return common_cli.ExitCode.USAGE if rc == 2 else common_cli.ExitCode.RUNTIME
+    warnings = [f for f in findings if f.get("severity") == "warning"]
+    for f in warnings:
+        print(f"警告: {f.get('rule_id', '')}: {f.get('message', '')}（{f.get('location', '')}）")
+    out = dest / (args.file.stem + ".md")
+    rel = rep_path.relative_to(root).as_posix()
+    if warnings:
+        print(f"→ {out}（警告 {len(warnings)} 件。原本と見比べてからレビューしてください。変換レポート: {rel}）")
+    else:
+        print(f"→ {out}（変換レポート: {rel}）")
     return common_cli.ExitCode.OK
+
+
+def _convert_findings(path: Path) -> list[dict]:
+    try:
+        return list(json.loads(path.read_text(encoding="utf-8")).get("findings", []))
+    except (OSError, ValueError, AttributeError):
+        return []
 
 
 def cmd_precheck(root: Path, args) -> int:
@@ -127,16 +158,29 @@ def cmd_lint(root: Path, args) -> int:
 def cmd_dashboard(root: Path, args) -> int:
     catalog = checks.load(root / "config/checks.yaml")
     items = results.load_all(root / "reviews")
-    decided = {k: v["decision"] for k, v in history.load(root / "data/history.jsonl").items()}
+    hist = history.load(root / "data/history.jsonl", items)
+    decided = {k: v["decision"] for k, v in hist.decisions.items()}
     dest = args.dest or root / "reviews/dashboard.html"
     dest.write_text(dashboard.render(items, catalog, decided), encoding="utf-8", newline="\n")
     print(f"→ {dest}（{len(items)} 件）")
+    _report_orphans(hist)
     return common_cli.ExitCode.OK
+
+
+def _report_orphans(hist: history.Resolved) -> None:
+    if not hist.orphans:
+        return
+    print(
+        f"注意: いまの指摘に結び付けられない旧形式の判定 {len(hist.orphans)} 件"
+        "（再レビューで No がずれた等。採択率には数えます。必要ならダッシュボードで判定し直してください）:"
+    )
+    for r in sorted(hist.orphans, key=lambda r: r.get("key", "")):
+        print(f"  {r.get('key', '')} {r.get('decision', '')} {r.get('check_id', '')} {r.get('finding', '')}")
 
 
 def cmd_triage(root: Path, args) -> int:
     decisions = json.loads(args.file.read_text(encoding="utf-8"))
-    items = {i.key: i for i in results.load_all(root / "reviews")}
+    items = results.load_all(root / "reviews")
     try:
         n = history.append(root / "data/history.jsonl", decisions, items, date=dt.date.today().isoformat())
     except (KeyError, ValueError) as e:
@@ -147,7 +191,8 @@ def cmd_triage(root: Path, args) -> int:
 
 def cmd_accumulate(root: Path, args) -> int:
     catalog = checks.load(root / "config/checks.yaml")
-    hist = history.load(root / "data/history.jsonl")
+    resolved = history.load(root / "data/history.jsonl", results.load_all(root / "reviews"))
+    hist = resolved.all_records()
     stats = history.stats(hist)
     known = catalog.by_id()
     min_samples, low = 5, 0.3
@@ -189,6 +234,7 @@ def cmd_accumulate(root: Path, args) -> int:
     print(
         f"docs/adoption.md（見直し候補 {warn} 件）、docs/check-candidates.md（追加候補 {len(cands)} 件）を更新しました"
     )
+    _report_orphans(resolved)
     return common_cli.ExitCode.OK
 
 

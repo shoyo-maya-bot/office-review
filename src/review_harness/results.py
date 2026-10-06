@@ -19,7 +19,9 @@ check_id が NEW の指摘は「既存の観点に無い指摘」で、accumulat
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,8 +51,19 @@ class ReviewItem:
 
     @property
     def key(self) -> str:
-        """トリアージの記録で指摘を特定するキー（ファイル名 + 番号）."""
+        """ファイル名 + 番号（旧形式のキー）. 再レビューで No がずれると別の指摘を指すので、判定の結び付けには使わない."""
         return f"{self.file}#{self.no}"
+
+    @property
+    def fingerprint(self) -> str:
+        """指摘の指紋. 対象・箇所・指摘の本文から作り、No やファイル名（レビュー日）が変わっても同じ値になる."""
+        parts = [normalize(self.target or self.file), normalize(self.location), normalize(self.finding)]
+        return "fp:" + hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+def normalize(text: str) -> str:
+    """指紋用の正規化: 全角・半角の統一（NFKC）、空白の連続を 1 つに、前後の空白を除く、英字を小文字に."""
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", text)).strip().lower()
 
 
 def _cells(line: str) -> list[str]:

@@ -44,6 +44,7 @@ def _options(values: list[str], label: str, el_id: str) -> str:
 
 
 def render(items: list[ReviewItem], catalog: Catalog, decided: dict[str, str]) -> str:
+    """decided: 指摘の指紋 → adopted / rejected（triage.json のキーも指紋）."""
     checks = catalog.by_id()
     sev_count = Counter(i.severity for i in items)
     cat_count = Counter(checks[i.check_id].category if i.check_id in checks else "（新しい観点）" for i in items)
@@ -56,7 +57,7 @@ def render(items: list[ReviewItem], catalog: Catalog, decided: dict[str, str]) -
     for i in items:
         title = checks[i.check_id].title if i.check_id in checks else "新しい観点の候補"
         radios = "".join(
-            f'<label><input type="radio" name="{escape(i.key)}" value="{v}"{" checked" if decided.get(i.key) == v else ""}> {t}</label> '
+            f'<label><input type="radio" name="{escape(i.fingerprint)}" value="{v}"{" checked" if decided.get(i.fingerprint) == v else ""}> {t}</label> '
             for v, t in (("adopted", "採択"), ("rejected", "不採択"))
         )
         item_rows.append(

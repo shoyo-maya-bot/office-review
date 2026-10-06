@@ -429,3 +429,33 @@ class OutputSpecTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VersionTest(unittest.TestCase):
+    """配布名（pyproject の project.name）でバージョンを引くこと."""
+
+    def test_version_is_looked_up_by_distribution_name(self):
+        import importlib
+        import importlib.metadata as md
+        import tomllib
+        from unittest import mock
+
+        import field_validation
+
+        dist = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["name"]
+        asked: list[str] = []
+
+        def fake_version(name: str) -> str:
+            asked.append(name)
+            if name != dist:
+                raise md.PackageNotFoundError(name)
+            return "9.9.9"
+
+        try:
+            with mock.patch.object(md, "version", fake_version):
+                importlib.reload(field_validation)
+                self.assertEqual(field_validation.__version__, "9.9.9")
+                self.assertEqual(asked, [dist])
+        finally:
+            importlib.reload(field_validation)
+            importlib.reload(cli)

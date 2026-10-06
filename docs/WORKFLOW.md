@@ -10,11 +10,11 @@ flowchart LR
 
 | 手順 | やること | コマンド / 操作 |
 |---|---|---|
-| 1 準備 | Office の原本を Markdown にして `inputs/<種別>/` に置く。変換レポートの `loss.*` を確認 | `harness convert 設計書.xlsx --type api` |
+| 1 準備 | Office の原本を Markdown にして `inputs/<種別>/` に置く。表示される警告（`loss.*` 等）を確認（変換レポートは `data/convert-reports/<種別>/` に残る）。変換に失敗したときは止まる（終了コード 3、入力・外部ソフトの問題は 2） | `harness convert 設計書.xlsx --type api` |
 | 2 事前チェック | 機械で確かめられる観点（Front Matter・必須の見出し・表の列）を先に潰す。表の項目間の整合は fieldcheck | `harness precheck inputs/api/x.md --type api`、`fieldcheck validate inputs/api/x.md -r rules.yaml --table 入力` |
 | 3 AI レビュー | Copilot Chat で `/review inputs/api/x.md`。5 ロールの順に観点を確かめ、結果を表で出す | Copilot Chat |
 | 4 形式チェック | 結果を `reviews/YYYY-MM-DD_<対象>_result.md` に保存し、形式を確かめる | `harness lint` |
-| 5 トリアージ | ダッシュボードで指摘ごとに採択 / 不採択を選び、`triage.json` を保存 | `harness dashboard` → ブラウザで開く |
+| 5 トリアージ | ダッシュボードで指摘ごとに採択 / 不採択を選び、`triage.json` を保存。判定は指摘の指紋で結び付くので、再レビューで No がずれても同じ指摘に付いたまま（[ARCHITECTURE.md](ARCHITECTURE.md#判定の結び付け指紋)） | `harness dashboard` → ブラウザで開く |
 | 6 蓄積 | 判定を履歴に記録し、観点ごとの採択率と追加候補を更新 | `harness triage triage.json` → `harness accumulate` |
 | 7 育てる | 採択率の低い観点（⚠）は「観点」か「無効となるケース」を直す。追加候補は観点にする | `config/checks.yaml` を PR で修正 → `harness checklists` |
 

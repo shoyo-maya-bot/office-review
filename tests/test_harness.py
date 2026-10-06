@@ -12,7 +12,7 @@ from pathlib import Path
 
 from devtools_common.cli import run_main
 
-from review_harness import checks, cli
+from review_harness import checks, cli, history, results
 
 ROOT = Path(__file__).resolve().parent.parent
 REVIEW = "reviews/2026-10-02_order-api_result.md"
@@ -130,10 +130,8 @@ class TriageTest(Base):
         return harness(self.tmp, "triage", str(f))[0]
 
     def test_flow_and_candidates(self):
-        key = "2026-10-02_order-api_result.md#{}"
-        self.assertEqual(
-            self.triage({key.format(1): "adopted", key.format(5): "adopted", key.format(4): "rejected"}), 0
-        )
+        k = lambda n: triage_key(self.tmp, n)  # noqa: E731
+        self.assertEqual(self.triage({k(1): "adopted", k(5): "adopted", k(4): "rejected"}), 0)
         self.assertEqual(harness(self.tmp, "accumulate")[0], 0)
         adoption = (self.tmp / "docs/adoption.md").read_text("utf-8")
         self.assertIn("| ALL-003 |", adoption)
@@ -177,7 +175,181 @@ class DashboardTest(Base):
         html = (self.tmp / "reviews/dashboard.html").read_text("utf-8")
         self.assertNotIn("<script>alert(1)</script>", html)
         self.assertIn("&lt;script&gt;", html)
-        self.assertEqual(html.count('type="radio" name="2026-10-02_order-api_result.md#'), 12)
+        self.assertEqual(html.count('type="radio" name="fp:'), 12)
+
+
+def triage_key(root: Path, no: int) -> str:
+    """ダッシュボードが triage.json に書くキー（指摘の指紋）."""
+    item = next(i for i in results.load_all(root / "reviews") if i.no == no)
+    return item.fingerprint
+
+
+class FingerprintTest(Base):
+    """判定は No ではなく指摘の指紋（対象・箇所・指摘の本文）で結び付ける."""
+
+    def renumber(self) -> None:
+        # 再レビューで先頭に指摘が 1 件増え、以降の No がずれた状態を作る
+        self.edit(
+            REVIEW,
+            "| 1 | ALL-003 |",
+            "| 1 | API-005 | Q | infra | 全体 | 想定の同時実行数はどの程度か | 記載なし | 非機能要件書の参照も無い |\n| 1 | ALL-003 |",
+        )
+        p = self.tmp / REVIEW
+        lines = p.read_text(encoding="utf-8").splitlines()
+        n = 0
+        for i, ln in enumerate(lines):
+            if ln.startswith("| ") and ln[2].isdigit():
+                n += 1
+                lines[i] = f"| {n} |" + ln.split("|", 2)[2]
+        p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def decided_by_finding(self) -> dict[str, str]:
+        items = results.load_all(self.tmp / "reviews")
+        res = history.resolve(history.load_records(self.tmp / "data/history.jsonl"), items)
+        return {i.finding: res.decisions[i.fingerprint]["decision"] for i in items if i.fingerprint in res.decisions}
+
+    def test_fingerprint_is_independent_of_no_and_file(self):
+        items = results.load_all(self.tmp / "reviews")
+        a = items[0]
+        moved = results.ReviewItem(**{**a.__dict__, "no": 99, "file": "2026-10-09_order-api_result.md"})
+        self.assertEqual(a.fingerprint, moved.fingerprint)
+        spaced = results.ReviewItem(**{**a.__dict__, "location": " 3.  処理 3 ", "finding": a.finding + "  "})
+        self.assertEqual(a.fingerprint, spaced.fingerprint)
+        other = results.ReviewItem(**{**a.__dict__, "finding": "別の指摘"})
+        self.assertNotEqual(a.fingerprint, other.fingerprint)
+        self.assertEqual(len({i.fingerprint for i in items}), len(items))
+
+    def test_decisions_follow_the_finding_after_rerun(self):
+        f = self.tmp / "triage.json"
+        f.write_text(
+            json.dumps({triage_key(self.tmp, 1): "adopted", triage_key(self.tmp, 4): "rejected"}), encoding="utf-8"
+        )
+        self.assertEqual(harness(self.tmp, "triage", str(f))[0], 0)
+        rec = json.loads((self.tmp / "data/history.jsonl").read_text("utf-8").splitlines()[0])
+        self.assertIn("fingerprint", rec)
+        self.assertRegex(rec["key"], r"#\d+$")  # quality-analytics が読む key は残す
+        before = self.decided_by_finding()
+        self.renumber()
+        self.assertEqual(self.decided_by_finding(), before)
+        harness(self.tmp, "dashboard")
+        html = (self.tmp / "reviews/dashboard.html").read_text("utf-8")
+        row = next(r for r in html.split("<tr ") if "参照テーブルと検索条件" in r)
+        self.assertIn('value="rejected" checked', row)
+        self.assertNotIn('value="adopted" checked', row)
+
+    def test_legacy_entries_migrate_only_when_no_still_matches(self):
+        # data/history.jsonl は旧形式（key = ファイル名#No）。No がそのままなら同じ指摘に引き継ぐ
+        shutil.copy(ROOT / "data/history.jsonl", self.tmp / "data/history.jsonl")
+        before = self.decided_by_finding()
+        self.assertEqual(len(before), 3)
+        self.renumber()
+        items = results.load_all(self.tmp / "reviews")
+        res = history.resolve(history.load_records(self.tmp / "data/history.jsonl"), items)
+        self.assertEqual(res.decisions, {})
+        self.assertEqual(
+            sorted(r["key"] for r in res.orphans), [f"2026-10-02_order-api_result.md#{n}" for n in (1, 4, 5)]
+        )
+        rc, out = harness(self.tmp, "dashboard")
+        self.assertEqual(rc, 0)
+        self.assertIn("結び付けられない旧形式の判定 3 件", out)
+        # 孤立した判定も、観点ごとの採択率には数える
+        harness(self.tmp, "accumulate")
+        self.assertIn(
+            "| API-007 | 参照・更新するテーブルと条件が書かれている | 0 | 1 | 0% |  |",
+            (self.tmp / "docs/adoption.md").read_text("utf-8"),
+        )
+
+    def test_retriage_overrides_migrated_legacy_entry(self):
+        shutil.copy(ROOT / "data/history.jsonl", self.tmp / "data/history.jsonl")
+        f = self.tmp / "triage.json"
+        f.write_text(json.dumps({triage_key(self.tmp, 4): "adopted"}), encoding="utf-8")
+        self.assertEqual(harness(self.tmp, "triage", str(f))[0], 0)
+        harness(self.tmp, "accumulate")
+        self.assertIn(
+            "| API-007 | 参照・更新するテーブルと条件が書かれている | 1 | 0 | 100% |  |",
+            (self.tmp / "docs/adoption.md").read_text("utf-8"),
+        )
+
+
+class ConvertTest(Base):
+    """doc2md の終了コード: 0 成功（warning があっても 0）/ 1 変換失敗あり / 2 引数・入力の誤り / 3 実行時エラー."""
+
+    def fake_doc2md(self, rc: int, findings: list[dict]) -> None:
+        import os
+        import stat
+        import sys as _sys
+
+        bindir = self.tmp / "bin"
+        bindir.mkdir()
+        report_obj = {"findings": findings}
+        script = bindir / "doc2md"
+        script.write_text(
+            f"#!{_sys.executable}\n"
+            "import json, pathlib, sys\n"
+            "a = sys.argv[1:]\n"
+            "out = a[a.index('-o') + 1] if '-o' in a else None\n"
+            "dest = pathlib.Path(a[a.index('-d') + 1]); dest.mkdir(parents=True, exist_ok=True)\n"
+            "(dest / (pathlib.Path(a[0]).stem + '.md')).write_text('# x\\n', encoding='utf-8')\n"
+            f"text = {json.dumps(json.dumps(report_obj, ensure_ascii=False))}\n"
+            "pathlib.Path(out).write_text(text, encoding='utf-8') if out else print(text)\n"
+            f"sys.exit({rc})\n",
+            encoding="utf-8",
+        )
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        old = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{bindir}{os.pathsep}{old}"
+        self.addCleanup(os.environ.__setitem__, "PATH", old)
+
+    def convert(self) -> tuple[int, str, str]:
+        src = self.tmp / "設計書.xlsx"
+        src.write_bytes(b"x")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = run_main(cli.main, ["--root", str(self.tmp), "convert", str(src), "--type", "api"])
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_exit_1_is_failure(self):
+        self.fake_doc2md(
+            1,
+            [
+                {
+                    "rule_id": "convert.failed",
+                    "severity": "error",
+                    "message": "BadZipFile: 壊れています",
+                    "location": "設計書.xlsx",
+                }
+            ],
+        )
+        rc, out, err = self.convert()
+        self.assertNotEqual(rc, 0)
+        self.assertIn("変換に失敗", err)
+        self.assertIn("BadZipFile", err)
+        self.assertNotIn("→", out)
+
+    def test_warnings_are_shown_and_recorded(self):
+        w = {
+            "rule_id": "loss.raw_text",
+            "severity": "warning",
+            "message": "元ファイルの文字の 80% しか出力されていない",
+            "location": "設計書.xlsx",
+        }
+        self.fake_doc2md(
+            0, [{"rule_id": "convert.ok", "severity": "info", "message": "ok", "location": "設計書.xlsx"}, w]
+        )
+        rc, out, err = self.convert()
+        self.assertEqual(rc, 0)
+        self.assertIn("loss.raw_text", out + err)
+        self.assertIn("80%", out + err)
+        rep = self.tmp / "data/convert-reports/api/設計書.json"
+        self.assertTrue(rep.is_file())
+        self.assertIn("loss.raw_text", rep.read_text("utf-8"))
+        self.assertTrue((self.tmp / "inputs/api/設計書.md").is_file())
+
+    def test_usage_error_from_doc2md(self):
+        self.fake_doc2md(2, [])
+        rc, _, err = self.convert()
+        self.assertEqual(rc, 2)
+        self.assertIn("doc2md", err)
 
 
 if __name__ == "__main__":
