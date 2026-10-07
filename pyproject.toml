@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "office-review"
-version = "0.1.0"
+version = "0.2.0"
 description = "設計資料のレビューを、チェックリスト・マルチロール・指摘の蓄積で育てるレビューハーネス（項目間検証 fieldcheck を同梱）"
 license = "MIT"
 readme = "README.md"
@@ -17,8 +17,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
-# Office の原本を変換するときだけ必要（harness convert）
-convert = ["doc-to-markdown @ git+https://github.com/shoyo-maya-bot/doc-to-markdown.git@f73257ff9aa826d9c2887eb2d495593bac7e9129"]  # 依存は SHA で固定（devtools-common の方針）
+# Office の原本を変換するときだけ必要（harness convert）. 依存は SHA で固定（devtools-common の方針）
+# doc-to-markdown のこの版が固定している devtools-common は、上の dependencies と同じ版でなければならない
+# （違うと pip install ".[convert]" が ResolutionImpossible で失敗する。tests/test_pins.py と CI の convert ジョブで確かめる）
+# doc-to-markdown が固定している devtools-common: 61ca10f418b7176741cc7977f5971f69da63960d
+convert = ["doc-to-markdown @ git+https://github.com/shoyo-maya-bot/doc-to-markdown.git@515dbeb7f702ce0cbe8f7c8d497e55585ead9555"]
 
 [project.scripts]
 harness = "review_harness.cli:entrypoint"

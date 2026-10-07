@@ -10,6 +10,8 @@ Copilot にレビューさせ、人の採択 / 不採択を蓄積して **チェ
 
 1. このリポジトリを clone する
 2. **Windows**: `setup.cmd` をダブルクリック ／ **macOS・Linux**: `./setup.sh`
+   （`harness convert` に使う doc-to-markdown も入ります。要らないときは `setup.cmd --no-convert` / `./setup.sh --no-convert`。
+   手で入れるなら `pip install -e ".[convert]"`）
 3. VS Code でフォルダを開き、Copilot Chat で `/review inputs/api/order-api.md`（同梱のサンプル）
 
 ## 流れ
@@ -65,12 +67,34 @@ fieldcheck schema > fieldcheck/rules.schema.json      # ルールの JSON Schema
 
 ルールの書き方と出力形式は [fieldcheck/OUTPUT_SPEC.md](fieldcheck/OUTPUT_SPEC.md) とサンプル（[fieldcheck/samples/](fieldcheck/samples/)）。
 
+- **文字コード**: 既定は UTF-8（BOM 付き可）を試し、読めなければ Shift_JIS（cp932）を試します。どちらでも読めなければ
+  終了コード 2 で `--encoding` を案内します
+- **Markdown の表**: doc-to-markdown のエスケープ（`\\` `\|` `\<` など。doc-to-markdown の docs/OUTPUT_SPEC.md）を元の文字に戻し、
+  `<br>` を改行として読みます。セル数が見出しと合わない行は警告（`input.row_shape`）を出します（足りないセルは空として読み、
+  多いセルは読まずに値を警告に出します）
+
 ## 開発
 
 ```bash
 ./setup.sh && source .venv/bin/activate
 ruff check . && ruff format --check . && pytest
 ```
+
+- 依存の版は `constraints.txt` でそろえます（`pip install -c constraints.txt -e ".[dev,convert]"`。GitHub Actions の deps-lock が作る）
+- `[convert]` の doc-to-markdown は、本体と同じ devtools-common の版を固定しているコミットにします（違うと `pip install ".[convert]"` が
+  失敗します）。`tests/test_pins.py` と CI の convert ジョブで確かめます
+- CI: Linux と Windows のテスト、`.[convert]` を入れてサンプルを `harness convert`、bandit・pip-audit
+
+## 変更点（0.2.0）
+
+| 変更 | 以前 | これから |
+|---|---|---|
+| fieldcheck の入力の文字コード（既定） | UTF-8 だけ（Shift_JIS は終了コード 3） | UTF-8 → Shift_JIS の順に自動。読めなければ終了コード 2 |
+| Markdown の表の `\\` などのエスケープ | そのまま読んでいた（`C:\\data`） | 元の文字に戻す（`C:\data`） |
+| セル数が見出しと合わない行 | 黙って切り詰め | 警告 `input.row_shape`（`--fail-on warning` なら終了コード 1） |
+| `harness triage` の triage.json が無い・壊れている | 終了コード 3 | 終了コード 2（分かりやすいメッセージ） |
+| data/history.jsonl の壊れた行 | 全コマンドが終了コード 3 | 行番号つきで警告して飛ばす |
+| `harness precheck` の BOM 付き Markdown | Front Matter が無いと誤判定 | 正しく読む |
 
 ## 関連リポジトリ
 

@@ -25,7 +25,7 @@ class DatasetSpec:
     name: str
     path: Path
     table: str | None = None
-    encoding: str = "utf-8-sig"
+    encoding: str | None = None  # None は UTF-8 → cp932 の順に自動で試す
 
 
 def parse_dataset_arg(value: str) -> DatasetSpec:

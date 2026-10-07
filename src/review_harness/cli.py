@@ -178,8 +178,27 @@ def _report_orphans(hist: history.Resolved) -> None:
         print(f"  {r.get('key', '')} {r.get('decision', '')} {r.get('check_id', '')} {r.get('finding', '')}")
 
 
+def _read_triage(path: Path) -> dict[str, str]:
+    """triage.json（指紋 → adopted / rejected）. 無い・壊れているは使い方の誤り（終了コード 2）."""
+    if not path.is_file():
+        raise common_cli.UsageError(
+            f"判定のファイルが見つかりません: {path}（ダッシュボードで書き出した triage.json を指定）"
+        )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except json.JSONDecodeError as e:
+        raise common_cli.UsageError(
+            f"{path.name} を JSON として読めません（{e.lineno} 行 {e.colno} 列: {e.msg}）"
+        ) from None
+    except UnicodeDecodeError:
+        raise common_cli.UsageError(f"{path.name} を UTF-8 として読めません") from None
+    if not isinstance(data, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in data.items()):
+        raise common_cli.UsageError(f'{path.name} は {{"指紋": "adopted" か "rejected"}} の形にしてください')
+    return data
+
+
 def cmd_triage(root: Path, args) -> int:
-    decisions = json.loads(args.file.read_text(encoding="utf-8"))
+    decisions = _read_triage(args.file)
     items = results.load_all(root / "reviews")
     try:
         n = history.append(root / "data/history.jsonl", decisions, items, date=dt.date.today().isoformat())

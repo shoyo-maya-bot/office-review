@@ -40,7 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("input", type=Path, help="csv / tsv / json / jsonl / yaml / md")
     v.add_argument("-r", "--rules", type=Path, required=True, help="ルールファイル（YAML / JSON）")
     v.add_argument("--table", help="Markdown 入力で使う表（1 始まりの番号、または直前の見出し名）")
-    v.add_argument("--encoding", default="utf-8-sig", help="入力の文字コード（例: cp932）")
+    v.add_argument(
+        "--encoding",
+        default=None,
+        help="入力の文字コード（例: cp932）。既定は UTF-8（BOM 付き可）→ Shift_JIS（cp932）の順に自動で試す",
+    )
     v.add_argument(
         "--fail-on",
         choices=["error", "warning", "info", "never"],

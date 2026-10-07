@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,11 +37,32 @@ class Stat:
         return self.adopted / self.total if self.total else None
 
 
-def load_records(path: Path) -> list[dict]:
-    """data/history.jsonl の全行（書いた順）."""
+REQUIRED_KEYS = ("decision", "check_id")
+
+
+def load_records(path: Path, warn=None) -> list[dict]:
+    """data/history.jsonl の全行（書いた順）.
+
+    壊れた行（JSON として読めない・オブジェクトでない・判定や check_id が無い）は、行番号つきで警告して飛ばす
+    （1 行の破損で全コマンドが止まらないように）。warn: 警告の出し先（既定は標準エラー）。
+    """
     if not path.is_file():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    warn = warn or (lambda msg: print(msg, file=sys.stderr))
+    out: list[dict] = []
+    for no, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError as e:
+            warn(f"警告: {path.name}:{no} を飛ばしました（JSON として読めません: {e.msg}）")
+            continue
+        if not isinstance(rec, dict) or any(k not in rec for k in REQUIRED_KEYS) or rec["decision"] not in DECISIONS:
+            warn(f"警告: {path.name}:{no} を飛ばしました（decision（adopted / rejected）と check_id が必要です）")
+            continue
+        out.append(rec)
+    return out
 
 
 @dataclass
@@ -143,6 +165,6 @@ def stats(history: dict[str, dict]) -> list[Stat]:
 def new_check_candidates(history: dict[str, dict]) -> list[dict]:
     return [
         r
-        for r in sorted(history.values(), key=lambda r: r["key"])
-        if r["check_id"] == "NEW" and r["decision"] == "adopted" and r["severity"] in ("MUST", "WANT")
+        for r in sorted(history.values(), key=lambda r: str(r.get("key", "")))
+        if r["check_id"] == "NEW" and r["decision"] == "adopted" and r.get("severity") in ("MUST", "WANT")
     ]

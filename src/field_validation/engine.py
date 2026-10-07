@@ -198,9 +198,7 @@ def load_ruleset(path: Path, dataset_overrides: Iterable[DatasetSpec] = ()) -> R
     datasets = Datasets()
     for name, spec in (data.get("datasets") or {}).items():
         table = str(spec["table"]) if "table" in spec else None
-        datasets.specs[name] = DatasetSpec(
-            name, (path.parent / spec["file"]).resolve(), table, spec.get("encoding", "utf-8-sig")
-        )
+        datasets.specs[name] = DatasetSpec(name, (path.parent / spec["file"]).resolve(), table, spec.get("encoding"))
     for spec in dataset_overrides:  # CLI の --dataset はカレントディレクトリからの相対
         datasets.specs[spec.name] = spec
     masters = {n: _load_master(path.parent, n, s, datasets) for n, s in (data.get("masters") or {}).items()}
@@ -247,7 +245,7 @@ def _check_columns(columns: Iterable[str], ruleset: RuleSet, origin: str) -> Non
 def evaluate(source: Source, ruleset: RuleSet, *, max_findings: int | None = None) -> Result:
     if source.columns is not None:
         _check_columns(source.columns, ruleset, "ヘッダ行")
-    findings: list[Finding] = []
+    findings: list[Finding] = list(source.warnings)  # 入力の形の注意（表の行のセル数の過不足など）
     count = 0
     truncated = False
     for loc, rec in source.records:
