@@ -33,12 +33,12 @@ jobs:
         run: |
           C=""; [ -f constraints.txt ] && C="-c constraints.txt"
           pip install $C -e ".[dev]"
-      - run: ruff check . && ruff format --check .
-      - run: pytest -q
+      - run: .github/scripts/run.sh bash -c "ruff check . && ruff format --check ."
+      - run: .github/scripts/run.sh pytest -q
       - name: checklists are up to date
-        run: harness checklists --check
+        run: .github/scripts/run.sh harness checklists --check
       - name: review results are well-formed
-        run: harness lint
+        run: .github/scripts/run.sh harness lint
 
   test-windows:
     name: test (Windows)
@@ -56,8 +56,8 @@ jobs:
         run: |
           C=""; [ -f constraints.txt ] && C="-c constraints.txt"
           pip install $C -e ".[dev]"
-      - run: pytest -q
-      - run: harness checklists --check
+      - run: bash .github/scripts/run.sh pytest -q
+      - run: bash .github/scripts/run.sh harness checklists --check
 
   # [convert]（doc-to-markdown）が本体と一緒に入るか（devtools-common の版の衝突を検出する）と、harness convert が動くか
   convert:
@@ -77,9 +77,9 @@ jobs:
           pip install $C ".[convert,dev]"
           pip show doc-to-markdown devtools-common | grep -E "^(Name|Version|Requires)"
       - name: 固定の確認（入った doc-to-markdown の devtools-common が本体と同じ SHA か）
-        run: pytest -q tests/test_pins.py
+        run: .github/scripts/run.sh pytest -q tests/test_pins.py
       - name: サンプルを harness convert して読み戻す
-        run: python .github/scripts/convert_smoke.py "$RUNNER_TEMP/convert"
+        run: .github/scripts/run.sh python .github/scripts/convert_smoke.py "$RUNNER_TEMP/convert"
 
   security:
     name: security (bandit・pip-audit)
@@ -98,6 +98,6 @@ jobs:
           pip install $C -e ".[convert]"
           pip install "bandit==1.8.6" "pip-audit==2.9.0"
       - name: SAST（bandit. 中以上）
-        run: bandit -q -r src -ll
+        run: .github/scripts/run.sh bandit -q -r src -ll
       - name: 依存の脆弱性（pip-audit）
-        run: pip-audit --skip-editable --progress-spinner off
+        run: .github/scripts/run.sh pip-audit --skip-editable --progress-spinner off

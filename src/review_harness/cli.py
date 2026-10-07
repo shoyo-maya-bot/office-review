@@ -87,15 +87,19 @@ def cmd_convert(root: Path, args) -> int:
     2 未対応の形式・入力が無い・外部ツールが無い / 3 想定外のエラー。
     --strict は付けないので 1 は「変換失敗」。warning（loss.* 等）は表示して data/convert-reports/ に残し、続行する。
     """
-    if shutil.which("doc2md") is None:
-        raise common_cli.UsageError("doc2md が見つかりません。doc-to-markdown をインストールしてください")
+    # 見つけたパスで起動する（Windows では拡張子（.exe / .cmd）付きのパスでないと起動できないことがあるため）
+    doc2md = shutil.which("doc2md")
+    if doc2md is None:
+        raise common_cli.UsageError(
+            'doc2md が見つかりません。doc-to-markdown を入れてください（pip install -e ".[convert]"、または setup を再実行）'
+        )
     import subprocess
 
     dest = root / "inputs" / args.type
     rep_path = root / "data" / "convert-reports" / args.type / f"{args.file.stem}.json"
     rep_path.parent.mkdir(parents=True, exist_ok=True)
     rc = subprocess.run(
-        ["doc2md", str(args.file), "-d", str(dest), "--front-matter", "-f", "json", "-o", str(rep_path)], check=False
+        [doc2md, str(args.file), "-d", str(dest), "--front-matter", "-f", "json", "-o", str(rep_path)], check=False
     ).returncode
     findings = _convert_findings(rep_path)
     if rc != 0:
