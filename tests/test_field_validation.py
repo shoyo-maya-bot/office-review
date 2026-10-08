@@ -449,6 +449,21 @@ class ExpressionTest(Tmp):
         self.assertEqual(str(to_number("▲1,000")), "-1000")
 
 
+class PluginTrustDocTest(unittest.TestCase):
+    """--plugin・entry point は任意のコードを実行する. 信頼できるものだけ使うと README・SECURITY.md・--help に書く."""
+
+    def test_docs_warn_that_plugins_run_as_code(self):
+        root = Path(__file__).resolve().parent.parent
+        for name in ("README.md", "SECURITY.md"):
+            text = (root / name).read_text(encoding="utf-8")
+            with self.subTest(name):
+                self.assertIn("--plugin", text)
+                self.assertIn("entry point", text)
+                self.assertIn("field_validation.rules", text)
+                self.assertIn("信頼できるもの", text)
+        self.assertIn("信頼できるもの", cli.build_parser().format_help())
+
+
 class OutputSpecTest(unittest.TestCase):
     def test_json_matches_report_schema(self):
         from devtools_common.report import report_schema

@@ -33,7 +33,13 @@ def build_parser() -> argparse.ArgumentParser:
         prog="fieldcheck", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    p.add_argument("--plugin", action="append", type=Path, default=[], help="カスタムルールの .py（複数可）")
+    p.add_argument(
+        "--plugin",
+        action="append",
+        type=Path,
+        default=[],
+        help="カスタムルールの .py（複数可）。コードとしてそのまま実行されるので、信頼できるものだけを指定する",
+    )
     sub = p.add_subparsers(dest="command", required=True)
 
     v = sub.add_parser("validate", help="データを検証してレポートを出力")

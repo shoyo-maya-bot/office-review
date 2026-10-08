@@ -29,7 +29,11 @@ ENTRY_POINT_GROUP = "field_validation.rules"
 # プラグイン
 # ---------------------------------------------------------------------------
 def load_plugins(paths: Iterable[Path] = ()) -> list[str]:
-    """--plugin で指定されたファイルと、entry point で配布されたルールを登録する."""
+    """--plugin で指定されたファイルと、entry point で配布されたルールを登録する.
+
+    どちらも Python のコードとしてそのまま実行する（サンドボックスなし）。
+    信頼できるものだけを使う（README・SECURITY.md）。
+    """
     loaded = []
     for ep in entry_points(group=ENTRY_POINT_GROUP):
         ep.load()

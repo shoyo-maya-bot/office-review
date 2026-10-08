@@ -67,6 +67,12 @@ fieldcheck schema > fieldcheck/rules.schema.json      # ルールの JSON Schema
 
 ルールの書き方と出力形式は [fieldcheck/OUTPUT_SPEC.md](fieldcheck/OUTPUT_SPEC.md) とサンプル（[fieldcheck/samples/](fieldcheck/samples/)）。
 
+> **カスタムルール（`--plugin` と entry point）は信頼できるものだけ使ってください。** `--plugin my_rules.py` で指定した
+> ファイルと、入っているパッケージの entry point（グループ `field_validation.rules`）は、`fieldcheck validate` のたびに
+> **Python のコードとしてそのまま実行されます**（サンドボックスはありません。ファイルの読み書きや通信もできます）。
+> 自分たちで書いてレビューしたもの、または中身を確かめたものだけを指定・インストールし、受け取ったルールや
+> 出どころの分からないパッケージを入れないでください。ルールファイル（YAML）の `expression` は安全な式だけを評価します（任意のコードは実行しません）。
+
 - **文字コード**: 既定は UTF-8（BOM 付き可）を試し、読めなければ Shift_JIS（cp932）を試します。どちらでも読めなければ
   終了コード 2 で `--encoding` を案内します
 - **Markdown の表**: doc-to-markdown のエスケープ（`\\` `\|` `\<` など。doc-to-markdown の docs/OUTPUT_SPEC.md）を元の文字に戻し、
