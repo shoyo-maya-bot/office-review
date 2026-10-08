@@ -5,6 +5,12 @@
 
 各ローダは (列名リスト or None, レコードのイテレータ, 警告) を返す。レコードは (位置, dict)。
 
+YAML の値: 引用符の無い値も **文字列のまま** 読む（`010` を 8、`no` を False、`2026-04-01` を日付にしない）。
+CSV・Markdown の表と同じく、数値・日付としての解釈は検証の側（`fields` の型宣言・自動判定）で行う。
+`null`・`~`・空の値は空欄（None）。JSON は JSON の型のまま。
+
+JSON Lines: 各行は JSON のオブジェクト（{...}）. それ以外（配列・数値など）は入力の誤り（終了コード 2）。
+
 文字コード: 既定（encoding=None）は UTF-8（BOM 付き可）を試し、読めなければ Shift_JIS（cp932）を試す。
 どちらでも読めなければ使い方の誤り（終了コード 2）にして --encoding を案内する。
 """
@@ -137,6 +143,29 @@ def _extra_cells_warning(path: Path, loc: str, n_columns: int, extra: list[str],
     )
 
 
+class _TextLoader(yaml.SafeLoader):
+    """引用符の無いスカラーを文字列のまま読む SafeLoader（null は空欄として None、`<<` のマージは効く）.
+
+    YAML 1.1 の暗黙の型（`010` → 8（8 進数）、`0x1A`、`1_000`、`yes`/`no`/`on`/`off` → 真偽値、
+    `2026-04-01` → 日付、`.inf`）は使わない. 明示したタグ（`!!int 10` など）はそのまま効く。
+    """
+
+
+_KEEP_IMPLICIT = ("tag:yaml.org,2002:null", "tag:yaml.org,2002:merge")  # 空欄と、`<<: *共通` のマージ
+_TextLoader.yaml_implicit_resolvers = {
+    first: [(tag, rx) for tag, rx in resolvers if tag in _KEEP_IMPLICIT]
+    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+
+
+def _load_yaml_as_text(text: str) -> Any:
+    loader = _TextLoader(text)
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
+
 def _records_from(data: Any, name: str) -> list[dict]:
     if isinstance(data, dict) and isinstance(data.get("records"), list):
         data = data["records"]
@@ -148,7 +177,7 @@ def _records_from(data: Any, name: str) -> list[dict]:
 def _structured(path: Path, encoding: str) -> Source:
     text = _read_text(path, encoding)
     try:
-        data = json.loads(text) if path.suffix.lower() == ".json" else yaml.safe_load(text)
+        data = json.loads(text) if path.suffix.lower() == ".json" else _load_yaml_as_text(text)
     except (json.JSONDecodeError, yaml.YAMLError) as e:
         raise UsageError(f"{path.name} を解析できません: {e}") from e
     records = _records_from(data, path.name)
@@ -165,6 +194,11 @@ def _jsonl(path: Path, encoding: str) -> Source:
                             obj = json.loads(line)
                         except json.JSONDecodeError as e:
                             raise UsageError(f"{path.name}:{i} JSON を解析できません: {e}") from e
+                        if not isinstance(obj, dict):
+                            raise UsageError(
+                                f"{path.name}:{i} 各行は JSON のオブジェクト（{{...}}）にしてください"
+                                f"（{type(obj).__name__} でした）"
+                            )
                         yield f"line {i}", obj
             except UnicodeDecodeError as e:
                 raise _decode_error(path, encoding, e) from None
