@@ -77,7 +77,9 @@ jobs:
           pip install $C ".[convert,dev]"
           pip show doc-to-markdown devtools-common | grep -E "^(Name|Version|Requires)"
       - name: 固定の確認（入った doc-to-markdown の devtools-common が本体と同じ SHA か）
-        run: .github/scripts/run.sh pytest -q tests/test_pins.py
+        env:
+          OFFICE_REVIEW_REQUIRE_CONVERT: "1"  # doc-to-markdown が入っていなければ skip でなく失敗にする
+        run: .github/scripts/run.sh pytest -q -rs tests/test_pins.py
       - name: サンプルを harness convert して読み戻す
         run: .github/scripts/run.sh python .github/scripts/convert_smoke.py "$RUNNER_TEMP/convert"
 
