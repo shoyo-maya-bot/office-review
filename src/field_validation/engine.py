@@ -247,6 +247,9 @@ def _check_columns(columns: Iterable[str], ruleset: RuleSet, origin: str) -> Non
 
 
 def evaluate(source: Source, ruleset: RuleSet, *, max_findings: int | None = None) -> Result:
+    """全レコードを評価する. max_findings: 指摘がこの件数（1 以上）に達したら打ち切る（None なら打ち切らない）."""
+    if max_findings is not None and max_findings < 1:
+        raise UsageError(f"--max-findings は 1 以上です（打ち切らないときは指定しない）: {max_findings}")
     if source.columns is not None:
         _check_columns(source.columns, ruleset, "ヘッダ行")
     # 入力の形の注意（表の行のセル数の過不足など）. CSV は読みながら足されるので、読み終えてから先頭に置く
@@ -288,4 +291,4 @@ def evaluate(source: Source, ruleset: RuleSet, *, max_findings: int | None = Non
         findings.extend(rule.finish())
     findings = [*source.warnings, *findings]
     log.info("evaluated %d records with %d rules: %d findings", count, len(ruleset.rules), len(findings))
-    return Result(findings[:max_findings] if max_findings else findings, count, truncated)
+    return Result(findings[:max_findings] if max_findings is not None else findings, count, truncated)
