@@ -373,6 +373,38 @@ class ExpressionTest(Tmp):
         self.assertEqual(self.run_expr("a if a > 1 else 0", rec), 1000)
         self.assertTrue(self.run_expr('value("s") < value("e")', rec))
 
+    def test_string_constant_compares_as_text_without_declared_type(self):
+        """型を宣言していない項目を文字列の定数と比べるときは文字列のまま比べる（"001" が数値 1 にならない）."""
+        rec = {"code": "001", "dept": "0120", "n": "10", "d": "2026-04-01"}
+        self.assertTrue(self.run_expr('code == "001"', rec))
+        self.assertTrue(self.run_expr('"001" == code', rec))
+        self.assertFalse(self.run_expr('code != "001"', rec))
+        self.assertTrue(self.run_expr('code in ["001", "002"]', rec))
+        self.assertTrue(self.run_expr('value("dept") not in ("120", "999")', rec))
+        self.assertTrue(self.run_expr('"12" in dept', rec))
+        self.assertTrue(self.run_expr('d == "2026-04-01"', rec))
+        self.assertTrue(self.run_expr('code < "002"', rec))
+        # 連鎖でも、文字列の定数と比べる側だけ文字列になる
+        self.assertTrue(self.run_expr('"000" < code < "002"', rec))
+        # 数値の定数とは今までどおり数値で比べる
+        self.assertTrue(self.run_expr("code == 1", rec))
+        self.assertTrue(self.run_expr("n > 9", rec))
+        # 型を宣言した項目は宣言どおり（number なら 1 になる）
+        self.assertFalse(self.run_expr('code == "001"', rec, {"code": "number"}))
+        self.assertTrue(self.run_expr('code == "001"', rec, {"code": "string"}))
+
+    def test_string_constant_rule_on_csv(self):
+        rules = self.write(
+            "r.yaml",
+            """
+            rules:
+              - {id: C, type: expression, assert: 'code in ["001", "002"]'}
+        """,
+        )
+        data = self.write("d.csv", "code\n001\n002\n1\n")
+        result = evaluate(open_source(data), load_ruleset(rules))
+        self.assertEqual([f.location for f in result.findings if f.rule_id == "C"], ["row 3"])
+
     def test_unsafe_expressions_rejected(self):
         from field_validation.expr import Expression, ExpressionError
 

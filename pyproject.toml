@@ -10,7 +10,7 @@ license = "MIT"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-  "devtools-common @ git+https://github.com/shoyo-maya-bot/devtools-common.git@2e25f8a11717ab387c7c2174d2a06b1a5eb37713",
+  "devtools-common @ git+https://github.com/shoyo-maya-bot/devtools-common.git@cbe97d5c9960d3eb26c853b9b3c9f271be73e0a1",
   "PyYAML>=6.0",
   "jsonschema>=4.18",
 ]
@@ -21,7 +21,7 @@ dev = ["pytest>=8", "ruff>=0.6"]
 # doc-to-markdown のこの版が固定している devtools-common は、上の dependencies と同じ版でなければならない
 # （違うと pip install ".[convert]" が ResolutionImpossible で失敗する。CI の convert ジョブで、実際に入った依存を
 #  tests/test_pins.py が確かめる）
-convert = ["doc-to-markdown @ git+https://github.com/shoyo-maya-bot/doc-to-markdown.git@24958948fbcee639026b209d5f18e176a41849d6"]
+convert = ["doc-to-markdown @ git+https://github.com/shoyo-maya-bot/doc-to-markdown.git@dc05a4068380bd3297b5937323d8ebd17d8b5fb3"]
 
 [project.scripts]
 harness = "review_harness.cli:entrypoint"
