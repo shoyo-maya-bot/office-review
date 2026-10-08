@@ -43,3 +43,14 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# CI（.github/workflows/ci.yml）で `coverage run -m pytest` → `coverage report`. 下限を下回ると失敗する
+# （いまは 93% 前後. 少しの増減で落ちないよう 88% を下限にする. 上げるのはよいが、下げるときは PR に理由を書く）
+[tool.coverage.run]
+source = ["src"]
+branch = false
+
+[tool.coverage.report]
+fail_under = 88
+show_missing = false
+skip_empty = true

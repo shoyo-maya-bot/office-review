@@ -33,12 +33,15 @@ jobs:
         run: |
           C=""; [ -f constraints.txt ] && C="-c constraints.txt"
           pip install $C -e ".[dev]"
+          pip install "coverage==7.10.6"
       - run: .github/scripts/run.sh bash -c "ruff check . && ruff format --check ."
-      - run: .github/scripts/run.sh pytest -q
+      # テストとカバレッジの下限（設定は pyproject.toml の [tool.coverage]. 下限を下回ると失敗）
+      - run: .github/scripts/run.sh coverage run -m pytest -q
+      - run: .github/scripts/run.sh coverage report
       - name: checklists are up to date
         run: .github/scripts/run.sh harness checklists --check
       - name: review results are well-formed
-        run: .github/scripts/run.sh harness lint
+        run: .github/scripts/run.sh harness lint --fail-if-empty
 
   test-windows:
     name: test (Windows)
