@@ -1,4 +1,4 @@
-"""採点で出た入力の扱いの指摘の再現テスト.
+"""入力の扱いの再現テスト.
 
 文字コード・Markdown のエスケープ・表の行の過不足・BOM・壊れた判定ファイル.
 """
@@ -85,7 +85,7 @@ class MarkdownEscapeTest(Tmp):
     """doc2md の出力仕様（docs/OUTPUT_SPEC.md の「エスケープ」）どおりに戻す."""
 
     def test_backslash_is_restored(self):
-        # 採点で再現した入力: C:\data\x は doc2md で C:\\data\\x になる。以前はそのまま読んでいた
+        # 再現した入力: C:\data\x は doc2md で C:\\data\\x になる。以前はそのまま読んでいた
         md = "| パス | 備考 |\n|---|---|\n| C:\\\\data\\\\x | a\\|b |\n"
         self.assertEqual(markdown_tables(md)[0][2], [["C:\\data\\x", "a|b"]])
 
