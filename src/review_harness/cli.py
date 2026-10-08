@@ -165,6 +165,7 @@ def cmd_dashboard(root: Path, args) -> int:
     hist = history.load(root / "data/history.jsonl", items)
     decided = {k: v["decision"] for k, v in hist.decisions.items()}
     dest = args.dest or root / "reviews/dashboard.html"
+    dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(dashboard.render(items, catalog, decided), encoding="utf-8", newline="\n")
     print(f"→ {dest}（{len(items)} 件）")
     _report_orphans(hist)

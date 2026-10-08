@@ -18,111 +18,69 @@ check_id が NEW の指摘は「既存の観点に無い指摘」で、accumulat
 
 from __future__ import annotations
 
-import datetime as dt
 import hashlib
-import re
-import unicodedata
-from dataclasses import dataclass
 from pathlib import Path
 
+from devtools_common import review_results as rr
 from devtools_common.report import Finding, Severity
 
-from field_validation.mdtable import split_row
-
 from .checks import SEVERITIES, TYPES, Catalog
-from .precheck import front_matter
 
-COLUMNS = ["No", "check_id", "重要度", "ロール", "箇所", "指摘", "根拠", "無効となるケースの確認"]
-REQUIRED_META = ["target", "type", "reviewed_at"]
+# 読み込み（BOM・Front Matter・表のエスケープ）は devtools-common の共通部品で行う（quality-analytics と同じ規則）
+COLUMNS = rr.COLUMNS
+REQUIRED_META = rr.REQUIRED_META
+normalize = rr.normalize
 
 
-@dataclass
-class ReviewItem:
-    file: str
-    target: str
-    doc_type: str
-    reviewed_at: str
-    no: int
-    check_id: str
-    severity: str
-    role: str
-    location: str
-    finding: str
-    basis: str
-    invalid_check: str
+def fingerprint(target: str, location: str, finding: str, role: str, check_id: str) -> str:
+    """指摘の指紋（"fp:" + 16 桁の 16 進）. 対象・箇所・指摘の本文に、ロールと観点（check_id）を加えて作る.
 
-    @property
-    def key(self) -> str:
-        """ファイル名 + 番号（旧形式のキー）. 再レビューで No がずれると別の指摘を指すので、判定の結び付けには使わない."""
-        return f"{self.file}#{self.no}"
+    別のロール・観点が同じ箇所に同じ文の指摘を出しても、別の指摘として判定できるようにする。
+    """
+    parts = [normalize(target), normalize(location), normalize(finding), normalize(role), normalize(check_id)]
+    return "fp:" + hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+class ReviewItem(rr.ReviewItem):
+    """レビュー結果の表の 1 行（指摘 1 件）. 読み込みは共通部品、指紋はロールと観点を含めたもの."""
 
     @property
     def fingerprint(self) -> str:
-        """指摘の指紋. 対象・箇所・指摘の本文から作り、No やファイル名（レビュー日）が変わっても同じ値になる."""
-        parts = [normalize(self.target or self.file), normalize(self.location), normalize(self.finding)]
-        return "fp:" + hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:16]
+        """指摘の指紋. 対象・箇所・指摘の本文・ロール・観点から作り、No やファイル名（レビュー日）が変わっても同じ値."""
+        return fingerprint(self.target or self.file, self.location, self.finding, self.role, self.check_id)
+
+    @property
+    def fingerprint_v1(self) -> str:
+        """旧指紋（対象・箇所・指摘の本文だけ）. 0.2.0 までの history.jsonl の fingerprint、quality-analytics が引く値."""
+        return rr.fingerprint(self.target or self.file, self.location, self.finding)
 
 
-def normalize(text: str) -> str:
-    """指紋用の正規化: 全角・半角の統一（NFKC）、空白の連続を 1 つに、前後の空白を除く、英字を小文字に."""
-    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", text)).strip().lower()
-
-
-def _cells(line: str) -> list[str]:
-    # 区切りは fieldcheck と同じパーサ（field_validation.mdtable）で分ける.
-    # セルの文字は \| だけを戻す（指紋が変わらないよう、ほかのエスケープ・<br> はそのまま残す）
-    return [c.strip().replace("\\|", "|") for c in split_row(line)]
+def _own(items: list[rr.ReviewItem]) -> list[ReviewItem]:
+    return [ReviewItem(**vars(i)) for i in items]
 
 
 def parse(path: Path) -> tuple[list[ReviewItem], list[Finding]]:
-    text = path.read_text(encoding="utf-8-sig")
-    meta = front_matter(text)
-    problems: list[Finding] = []
-    loc = path.name
-    for k in REQUIRED_META:
-        if not meta.get(k):
-            problems.append(Finding("lint.meta", Severity.ERROR, f"Front Matter に {k} がありません", location=loc))
-    if meta.get("type") and meta["type"] not in TYPES:
-        problems.append(Finding("lint.meta", Severity.ERROR, f"type '{meta['type']}' は不明です", location=loc))
-    lines = text.splitlines()
-    header_at = next((i for i, ln in enumerate(lines) if ln.startswith("|") and _cells(ln) == COLUMNS), None)
-    if header_at is None:
-        problems.append(
-            Finding(
-                "lint.table", Severity.ERROR, "指摘の表（列: " + " / ".join(COLUMNS) + "）がありません", location=loc
-            )
-        )
-        return [], problems
-    items: list[ReviewItem] = []
-    for i in range(header_at + 2, len(lines)):
-        ln = lines[i]
-        if not ln.startswith("|"):
-            break
-        cells = _cells(ln)
-        if len(cells) != len(COLUMNS):
-            problems.append(
-                Finding("lint.table", Severity.ERROR, f"列数が {len(cells)} です", location=f"{loc}:{i + 1}")
-            )
-            continue
-        try:
-            no = int(cells[0])
-        except ValueError:
-            problems.append(Finding("lint.table", Severity.ERROR, "No が数字ではありません", location=f"{loc}:{i + 1}"))
-            continue
-        reviewed = meta.get("reviewed_at", "")
-        if isinstance(reviewed, dt.date):
-            reviewed = reviewed.isoformat()
-        items.append(
-            ReviewItem(path.name, str(meta.get("target", "")), str(meta.get("type", "")), str(reviewed), no, *cells[1:])
-        )
-    return items, problems
+    """レビュー結果 1 ファイル → (指摘の行, 形式の誤り). type は config の種別（TYPES）で確かめる."""
+    items, problems = rr.parse_review_file(path, doc_types=TYPES)
+    return _own(items), problems
 
 
 def lint(path: Path, catalog: Catalog) -> list[Finding]:
     items, problems = parse(path)
     checks = catalog.by_id()
+    seen: dict[str, int] = {}
     for expected_no, it in enumerate(items, 1):
         loc = f"{path.name}#{it.no}"
+        first = seen.setdefault(it.fingerprint, it.no)
+        if first != it.no:
+            problems.append(
+                Finding(
+                    "lint.duplicate",
+                    Severity.ERROR,
+                    f"No {first} と同じ指摘です（対象・箇所・指摘・ロール・観点が同じで、判定を区別できません。1 行にまとめてください）",
+                    location=loc,
+                )
+            )
         if it.no != expected_no:
             problems.append(
                 Finding(
@@ -189,8 +147,4 @@ def lint(path: Path, catalog: Catalog) -> list[Finding]:
 
 
 def load_all(reviews_dir: Path) -> list[ReviewItem]:
-    items: list[ReviewItem] = []
-    for p in sorted(reviews_dir.glob("*_result.md")):
-        got, _ = parse(p)
-        items += got
-    return items
+    return _own(rr.load_review_dir(reviews_dir))

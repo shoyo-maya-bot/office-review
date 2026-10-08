@@ -12,6 +12,8 @@ eval は使わず、構文木をたどって評価する（任意コードは実
 
 項目の値の型: ルールファイルの `fields` で型を宣言していればその型、無ければ自動判定
 （数値として読めれば数値、日付として読めれば日付、それ以外は文字列）。空欄は None。
+ただし型を宣言していない項目を文字列の定数と比べるとき（`code == "001"`、`code in ["001", "002"]`、
+`"A" in code`）は、その項目を文字列のまま比べる（"001" を数値 1 にして "001" と比べ、常に偽になるのを防ぐ）。
 """
 
 from __future__ import annotations
@@ -118,11 +120,13 @@ class Expression:
     def evaluate(self, rec: Mapping[str, Any], types: Mapping[str, str] | None = None) -> Any:
         types = types or {}
 
-        def get(name: str) -> Any:
+        def get(name: str, as_text: bool = False) -> Any:
             v = rec.get(name)
             if is_blank(v):
                 return None
             t = types.get(name)
+            if as_text and t is None:
+                return to_text(v)
             try:
                 if t == "number":
                     return to_number(v)
@@ -167,12 +171,14 @@ class Expression:
             if isinstance(node, ast.BinOp):
                 return _BIN[type(node.op)](ev(node.left), ev(node.right))
             if isinstance(node, ast.Compare):
-                left = ev(node.left)
+                # 片側が文字列の定数なら、もう片側の（型を宣言していない）項目は文字列のまま比べる
+                left_node = node.left
                 for op, comp in zip(node.ops, node.comparators, strict=True):
-                    right = ev(comp)
+                    left = ev_side(left_node, text=_is_str_const(comp))
+                    right = ev_side(comp, text=_is_str_const(left_node))
                     if not _CMP[type(op)](left, right):
                         return False
-                    left = right
+                    left_node = comp
                 return True
             if isinstance(node, ast.IfExp):
                 return ev(node.body) if ev(node.test) else ev(node.orelse)
@@ -183,10 +189,42 @@ class Expression:
                 return FUNCTIONS[name](*[ev(a) for a in node.args])
             raise ExpressionError(f"評価できない要素: {type(node).__name__}")
 
+        def ev_side(node: ast.AST, *, text: bool) -> Any:
+            """比較の片側. text: 相手が文字列の定数なら、型を宣言していない項目は文字列のまま取る."""
+            if text:
+                name = _field_name(node)
+                if name is not None:
+                    return get(name, as_text=True)
+            return ev(node)
+
         try:
             return ev(self.tree)
         except (TypeError, ValueError, ArithmeticError, ValueTypeError) as e:
             raise ExpressionError(f"{type(e).__name__}: {e}") from None
+
+
+def _field_name(node: ast.AST) -> str | None:
+    """項目の参照（`合計`・`value("列 名")`）なら項目名."""
+    if isinstance(node, ast.Name) and node.id not in FUNCTIONS and node.id not in ("value", "True", "False", "None"):
+        return node.id
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "value"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Constant)
+    ):
+        return str(node.args[0].value)
+    return None
+
+
+def _is_str_const(node: ast.AST) -> bool:
+    """文字列の定数、または文字列の定数だけのリスト・タプル."""
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str)
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return bool(node.elts) and all(isinstance(e, ast.Constant) and isinstance(e.value, str) for e in node.elts)
+    return False
 
 
 def display_values(rec: Mapping[str, Any], fields: set[str]) -> str:

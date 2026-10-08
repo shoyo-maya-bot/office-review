@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import yaml
 from devtools_common.report import Finding, Severity
+from devtools_common.review_results import front_matter
 
 from field_validation.mdtable import markdown_tables
 
@@ -15,19 +15,6 @@ from .checks import Catalog
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.M)
 
 SEVERITY_MAP = {"MUST": Severity.ERROR, "WANT": Severity.WARNING, "NITS": Severity.INFO}
-
-
-def front_matter(text: str) -> dict:
-    if not text.startswith("---\n"):
-        return {}
-    end = text.find("\n---", 4)
-    if end < 0:
-        return {}
-    try:
-        data = yaml.safe_load(text[4:end])
-    except yaml.YAMLError:
-        return {}
-    return data if isinstance(data, dict) else {}
 
 
 def _norm(s: str) -> str:
