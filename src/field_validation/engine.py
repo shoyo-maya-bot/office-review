@@ -245,7 +245,8 @@ def _check_columns(columns: Iterable[str], ruleset: RuleSet, origin: str) -> Non
 def evaluate(source: Source, ruleset: RuleSet, *, max_findings: int | None = None) -> Result:
     if source.columns is not None:
         _check_columns(source.columns, ruleset, "ヘッダ行")
-    findings: list[Finding] = list(source.warnings)  # 入力の形の注意（表の行のセル数の過不足など）
+    # 入力の形の注意（表の行のセル数の過不足など）. CSV は読みながら足されるので、読み終えてから先頭に置く
+    findings: list[Finding] = []
     count = 0
     truncated = False
     for loc, rec in source.records:
@@ -276,10 +277,11 @@ def evaluate(source: Source, ruleset: RuleSet, *, max_findings: int | None = Non
             if rule.applies(rec):
                 # 型が不正な項目についての二次的な指摘は出さない（schema.type で報告済み）
                 findings.extend(f for f in rule.check(loc, rec) if f.field not in bad_fields)
-        if max_findings is not None and len(findings) >= max_findings:
+        if max_findings is not None and len(source.warnings) + len(findings) >= max_findings:
             truncated = True
             break
     for rule in ruleset.rules:
         findings.extend(rule.finish())
+    findings = [*source.warnings, *findings]
     log.info("evaluated %d records with %d rules: %d findings", count, len(ruleset.rules), len(findings))
     return Result(findings[:max_findings] if max_findings else findings, count, truncated)

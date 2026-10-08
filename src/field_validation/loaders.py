@@ -85,23 +85,56 @@ def _csv(path: Path, encoding: str, delimiter: str) -> Source:
     try:
         reader = csv.DictReader(f, delimiter=delimiter)
         columns = [c.strip() for c in (reader.fieldnames or [])]
+        _check_duplicate_columns(columns, path)
     except UnicodeDecodeError as e:
         f.close()
         raise _decode_error(path, encoding, e) from None
     except BaseException:
         f.close()
         raise
+    warnings: list[Finding] = []  # 読みながら足す（evaluate は読み終えてから集める）
 
     def gen() -> Iterator[Record]:
         try:
             for i, row in enumerate(reader, 1):
-                yield f"row {i}", {(k or "").strip(): v for k, v in row.items()}
+                loc = f"row {i}"
+                extra = row.pop(None, None)  # DictReader は列より多いセルを None キーにまとめる
+                if extra:
+                    hint = "列の区切り文字（, やタブ）が値の中に引用符なしで入っていないか"
+                    w = _extra_cells_warning(path, loc, len(columns), extra, hint)
+                    log.warning("%s %s（%s / %s）", w.location, w.message, w.expected, w.actual)
+                    warnings.append(w)
+                yield loc, {k.strip(): v for k, v in row.items()}
         except UnicodeDecodeError as e:
             raise _decode_error(path, encoding, e) from None
         finally:
             f.close()
 
-    return Source(columns, gen())
+    return Source(columns, gen(), warnings)
+
+
+def _check_duplicate_columns(columns: list[str], path: Path) -> None:
+    """同じ列名が 2 回以上あると、後の列が前の列の値を黙って上書きする. 読む前に使い方の誤りとして止める."""
+    seen: set[str] = set()
+    dups = [c for c in columns if c in seen or seen.add(c)]
+    if dups:
+        names = ", ".join(dict.fromkeys(dups))
+        raise UsageError(
+            f"{path.name}: 列名が重複しています: {names}（後の列の値で前の列が上書きされるため読みません）。"
+            "列名を一意にしてください（例: 金額_1, 金額_2）"
+        )
+
+
+def _extra_cells_warning(path: Path, loc: str, n_columns: int, extra: list[str], hint: str) -> Finding:
+    return Finding(
+        "input.row_shape",
+        Severity.WARNING,
+        f"{path.name}: 表の行のセルが列より多いため、列の無いセルを読みませんでした",
+        location=loc,
+        expected=f"{n_columns} セル",
+        actual=f"{n_columns + len(extra)} セル（読まなかった値: {' | '.join(extra)}）",
+        suggestion=f"{hint}確かめてください",
+    )
 
 
 def _records_from(data: Any, name: str) -> list[dict]:
@@ -157,6 +190,7 @@ def _markdown(path: Path, encoding: str, table: str | None) -> Source:
             raise UsageError(f"--table {table!r}: 該当する見出しの表がありません（候補: {names}）")
         chosen = matches[0]
     _, header, rows = chosen
+    _check_duplicate_columns(header, path)
     warnings: list[Finding] = []
     records: list[Record] = []
     for i, r in enumerate(rows, 1):
@@ -177,15 +211,7 @@ def _markdown(path: Path, encoding: str, table: str | None) -> Source:
         elif len(r) > len(header):
             extra = r[len(header) :]
             warnings.append(
-                Finding(
-                    "input.row_shape",
-                    Severity.WARNING,
-                    f"{path.name}: 表の行のセルが列より多いため、列の無いセルを読みませんでした",
-                    location=loc,
-                    expected=f"{len(header)} セル",
-                    actual=f"{len(r)} セル（読まなかった値: {' | '.join(extra)}）",
-                    suggestion="セルの中の | が \\| とエスケープされているか確かめてください",
-                )
+                _extra_cells_warning(path, loc, len(header), extra, "セルの中の | が \\| とエスケープされているか")
             )
             r = r[: len(header)]
         records.append((loc, dict(zip(header, r, strict=True))))

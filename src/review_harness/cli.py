@@ -212,6 +212,12 @@ def cmd_triage(root: Path, args) -> int:
     return common_cli.ExitCode.OK
 
 
+def _cell(value) -> str:
+    """Markdown の表のセル: | をエスケープし、改行を <br> にする（列がずれて表が壊れないように）."""
+    text = "" if value is None else str(value)
+    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\r\n", "\n").replace("\n", "<br>")
+
+
 def cmd_accumulate(root: Path, args) -> int:
     catalog = checks.load(root / "config/checks.yaml")
     resolved = history.load(root / "data/history.jsonl", results.load_all(root / "reviews"))
@@ -236,7 +242,7 @@ def cmd_accumulate(root: Path, args) -> int:
         flag = "⚠" if s.total >= min_samples and (s.rate or 0) < low else ""
         warn += bool(flag)
         rate = f"{s.rate:.0%}" if s.rate is not None else "-"
-        lines.append(f"| {s.check_id} | {title} | {s.adopted} | {s.rejected} | {rate} | {flag} |")
+        lines.append(f"| {_cell(s.check_id)} | {_cell(title)} | {s.adopted} | {s.rejected} | {rate} | {flag} |")
     (root / "docs").mkdir(exist_ok=True)
     (root / "docs/adoption.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     cands = history.new_check_candidates(hist)
@@ -251,7 +257,8 @@ def cmd_accumulate(root: Path, args) -> int:
         "|---|---|---|---|---|",
     ]
     cand_lines += [
-        f"| {c['finding']} | {c['doc_type']} | {c['role']} | {c['severity']} | {c['triaged_at']} |" for c in cands
+        "| " + " | ".join(_cell(c.get(k)) for k in ("finding", "doc_type", "role", "severity", "triaged_at")) + " |"
+        for c in cands
     ]
     (root / "docs/check-candidates.md").write_text("\n".join(cand_lines) + "\n", encoding="utf-8", newline="\n")
     print(

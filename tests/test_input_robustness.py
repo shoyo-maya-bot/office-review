@@ -192,5 +192,70 @@ class TriageInputTest(HarnessBase):
         self.assertEqual(self.harness("dashboard")[0], 0)
 
 
+class CsvShapeTest(Tmp):
+    """CSV: 列より多いセルを黙って捨てない（警告）. 列名の重複で値を黙って上書きしない（使い方の誤り）."""
+
+    def test_extra_cells_are_warned(self):
+        c = self.write("a.csv", "名前,金額\n山田,100\n佐藤,1,200\n")
+        src = open_source(c)
+        recs = list(src.records)
+        self.assertEqual(recs[1][1], {"名前": "佐藤", "金額": "1"})  # None キー（余りのセル）は入れない
+        self.assertEqual([(w.rule_id, w.location) for w in src.warnings], [("input.row_shape", "row 2")])
+        self.assertIn("200", src.warnings[0].actual)
+        self.assertIn("3 セル", src.warnings[0].actual)
+        rules = self.write("r.yaml", RULES)
+        rc, out, err = run(fv_cli.main, "validate", str(c), "-r", str(rules), "-f", "json")
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            [(f["rule_id"], f["location"]) for f in json.loads(out)["findings"]], [("input.row_shape", "row 2")]
+        )
+        rc, _, _ = run(fv_cli.main, "validate", str(c), "-r", str(rules), "--fail-on", "warning")
+        self.assertEqual(rc, 1)
+
+    def test_tsv_extra_cells_are_warned(self):
+        c = self.write("a.tsv", "名前\t金額\n山田\t100\tx\n")
+        src = open_source(c)
+        list(src.records)
+        self.assertEqual([w.location for w in src.warnings], ["row 1"])
+
+    def test_duplicate_column_names_are_usage_error(self):
+        c = self.write("d.csv", "名前,金額, 金額\n山田,100,200\n")
+        rules = self.write("r.yaml", RULES)
+        rc, _, err = run(fv_cli.main, "validate", str(c), "-r", str(rules))
+        self.assertEqual(rc, 2)
+        self.assertIn("列名が重複しています: 金額", err)
+
+    def test_duplicate_column_names_in_markdown_table_are_usage_error(self):
+        md = self.write("d.md", "| 名前 | 名前 |\n|---|---|\n| a | b |\n")
+        rules = self.write("r.yaml", RULES)
+        rc, _, err = run(fv_cli.main, "validate", str(md), "-r", str(rules))
+        self.assertEqual(rc, 2)
+        self.assertIn("列名が重複しています: 名前", err)
+
+
+class AccumulateEscapeTest(HarnessBase):
+    """accumulate の表: セルの中の | や改行で列がずれない."""
+
+    def test_pipe_and_newline_in_candidates_are_escaped(self):
+        rec = {
+            "key": "fp:0000000000000001",
+            "decision": "adopted",
+            "check_id": "NEW",
+            "severity": "MUST",
+            "finding": "a | b の\n分岐が無い",
+            "doc_type": "api",
+            "role": "dev|ops",
+            "triaged_at": "2026-10-08",
+        }
+        (self.tmp / "data/history.jsonl").write_text(json.dumps(rec, ensure_ascii=False) + "\n", encoding="utf-8")
+        rc, _, _ = self.harness("accumulate")
+        self.assertEqual(rc, 0)
+        text = (self.tmp / "docs/check-candidates.md").read_text("utf-8")
+        row = [ln for ln in text.splitlines() if "分岐が無い" in ln]
+        self.assertEqual(row, ["| a \\| b の<br>分岐が無い | api | dev\\|ops | MUST | 2026-10-08 |"])
+        self.assertEqual(len(split_row(row[0])), 5)  # 区切りは 5 列のまま
+        self.assertEqual(cells(row[0])[0], "a | b の\n分岐が無い")  # 読み戻すと元の値
+
+
 if __name__ == "__main__":
     unittest.main()
