@@ -18,7 +18,6 @@ check_id が NEW の指摘は「既存の観点に無い指摘」で、accumulat
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 from devtools_common import review_results as rr
@@ -32,27 +31,21 @@ REQUIRED_META = rr.REQUIRED_META
 normalize = rr.normalize
 
 
-def fingerprint(target: str, location: str, finding: str, role: str, check_id: str) -> str:
-    """指摘の指紋（"fp:" + 16 桁の 16 進）. 対象・箇所・指摘の本文に、ロールと観点（check_id）を加えて作る.
-
-    別のロール・観点が同じ箇所に同じ文の指摘を出しても、別の指摘として判定できるようにする。
-    """
-    parts = [normalize(target), normalize(location), normalize(finding), normalize(role), normalize(check_id)]
-    return "fp:" + hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:16]
+# 指紋 v2（対象・箇所・指摘の本文・ロール・観点）も共通部品（quality-analytics と同じ値）
+fingerprint = rr.fingerprint_v2
 
 
 class ReviewItem(rr.ReviewItem):
-    """レビュー結果の表の 1 行（指摘 1 件）. 読み込みは共通部品、指紋はロールと観点を含めたもの."""
+    """レビュー結果の表の 1 行（指摘 1 件）. 読み込みは共通部品、指紋はロールと観点を含めたもの（v2）.
+
+    fingerprint は fingerprint_v2（共通部品の ReviewItem.fingerprint_v2）、fingerprint_v1 は旧指紋
+    （対象・箇所・指摘の本文だけ。0.2.0 までの history.jsonl の fingerprint、quality-analytics が引く値）。
+    """
 
     @property
     def fingerprint(self) -> str:
-        """指摘の指紋. 対象・箇所・指摘の本文・ロール・観点から作り、No やファイル名（レビュー日）が変わっても同じ値."""
-        return fingerprint(self.target or self.file, self.location, self.finding, self.role, self.check_id)
-
-    @property
-    def fingerprint_v1(self) -> str:
-        """旧指紋（対象・箇所・指摘の本文だけ）. 0.2.0 までの history.jsonl の fingerprint、quality-analytics が引く値."""
-        return rr.fingerprint(self.target or self.file, self.location, self.finding)
+        """指摘の指紋（v2）. 対象・箇所・指摘の本文・ロール・観点から作り、No やファイル名（レビュー日）が変わっても同じ値."""
+        return self.fingerprint_v2
 
 
 def _own(items: list[rr.ReviewItem]) -> list[ReviewItem]:

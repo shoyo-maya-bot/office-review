@@ -23,6 +23,10 @@
 No やレビュー結果のファイル名には左右されません。別のロール・観点が同じ箇所に同じ文の指摘を出しても、別々に判定できます
 （ロール・観点まで同じ行は `harness lint` が `lint.duplicate` として報告します）。
 全角・半角の違い、空白の数、英字の大小は無視します。再レビューで指摘の順番が変わっても、判定は同じ指摘に付いたままです。
+指紋（v2）と下の結び付けの規則は devtools-common の共通部品（`devtools_common.review_results` の `fingerprint_v2`・
+`resolve_history_v2`）で、quality-analytics も同じ部品で引きます（office-review に別の実装は持ちません）。
+history.jsonl の壊れた行（JSON でない、`decision`・`check_id`・指紋が文字列でない、`fingerprint_v2`・`fingerprint`・`key` の
+どれも無い 等）は、行番号つきで警告して飛ばします。
 
 - `data/history.jsonl` の 1 行: `key`（記録した時点の `ファイル名#No`。quality-analytics が読む）、`fingerprint`（旧指紋:
   対象・箇所・指摘の本文だけ。quality-analytics など devtools-common の共通部品で読む側が引く値）、`fingerprint_v2`（上の指紋）、`decision`、

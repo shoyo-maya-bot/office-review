@@ -47,42 +47,20 @@ class Stat:
 def load_records(path: Path, warn=None) -> list[dict]:
     """data/history.jsonl の全行（書いた順）.
 
-    壊れた行（JSON として読めない・オブジェクトでない・判定や check_id が無い）は、行番号つきで警告して飛ばす
+    壊れた行（JSON として読めない・オブジェクトでない・判定や check_id が無い・それらや指紋が文字列でない・
+    fingerprint_v2 も fingerprint も key も無い）は、行番号つきで警告して飛ばす
     （1 行の破損で全コマンドが止まらないように）。warn: 警告の出し先（既定は標準エラー）。
     """
     return rr.load_history(path, warn)
 
 
-def resolve(records: list[dict], items: list[ReviewItem]) -> Resolved:
-    """判定を指紋（fingerprint_v2）で引けるようにする. 同じ指紋は後に書いたものが勝つ.
-
-    - fingerprint_v2 がある行: その指紋の判定
-    - fingerprint（旧指紋）だけの行: 旧指紋が同じいまの指摘の指紋に引き継ぐ（複数あればロールと観点が一致するもの）。
-      いまの指摘に無ければ旧指紋のまま残す（採択率の集計には数える）
-    - どちらも無い行（もっと古い形式。key = ファイル名#No）: key の No にいまある指摘が同じ指摘のときだけ引き継ぎ、
-      違えば孤立した判定として返す
-    """
-    items = list(items)
-    by_v1: dict[str, list[ReviewItem]] = {}
-    for it in items:
-        by_v1.setdefault(it.fingerprint_v1, []).append(it)
-    upgraded = []
-    for rec in records:
-        if not rec.get("fingerprint_v2") and rec.get("fingerprint"):
-            fp = _upgrade(rec, by_v1.get(rec["fingerprint"], []))
-            rec = {**rec, "fingerprint": fp} if fp else rec
-        elif rec.get("fingerprint_v2"):
-            rec = {**rec, "fingerprint": rec["fingerprint_v2"]}
-        upgraded.append(rec)
-    return rr.resolve_history(upgraded, items)  # 旧形式（fingerprint なし）の結び付けは共通部品と同じ規則
-
-
-def _upgrade(rec: dict, candidates: list[ReviewItem]) -> str | None:
-    """旧指紋の行 → いまの指摘の指紋. 旧指紋が同じ指摘が無い・決められないときは None."""
-    if len(candidates) == 1:
-        return candidates[0].fingerprint
-    same = {c.fingerprint for c in candidates if c.role == rec.get("role") and c.check_id == rec.get("check_id")}
-    return same.pop() if len(same) == 1 else None
+# 判定を指紋 v2 で引けるようにする（同じ指紋は後に書いたものが勝つ）. 共通部品の resolve_history_v2:
+# - fingerprint_v2 がある行: その指紋の判定
+# - fingerprint（旧指紋）だけの行: 旧指紋が同じいまの指摘の指紋に引き継ぐ（複数あればロールと観点が一致するもの）。
+#   いまの指摘に無ければ旧指紋のまま残す（採択率の集計には数える）
+# - どちらも無い行（もっと古い形式。key = ファイル名#No）: key の No にいまある指摘が同じ指摘のときだけ引き継ぎ、
+#   違えば孤立した判定として返す
+resolve = rr.resolve_history_v2
 
 
 def load(path: Path, items: list[ReviewItem]) -> Resolved:
