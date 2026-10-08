@@ -91,6 +91,12 @@ ruff check . && ruff format --check . && pytest
   失敗します）。`tests/test_pins.py` と CI の convert ジョブで確かめます
 - CI: Linux と Windows のテスト、`.[convert]` を入れてサンプルを `harness convert`、bandit・pip-audit
 
+## 変更点（次の版）
+
+| 変更 | 以前 | これから |
+|---|---|---|
+| fieldcheck の数値の `NaN`・`Infinity`（`inf` 等） | 比較で落ちる（終了コード 3） | 数値でない値として扱う（`fields` で number と宣言していれば `schema.type`）。ルールの `min`・`max`・`value` に `.nan`・`.inf` はルールの誤り（終了コード 2） |
+
 ## 変更点（0.2.0）
 
 | 変更 | 以前 | これから |

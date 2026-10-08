@@ -20,10 +20,15 @@ def is_blank(v: Any) -> bool:
 
 
 def to_number(v: Any) -> Decimal:
+    """数値（Decimal）に. 読めない値と有限でない値（NaN・Infinity. 文字列・float・Decimal）は ValueTypeError.
+
+    NaN / Infinity を数値として通すと、比較で decimal.InvalidOperation になって検証全体が落ちるので、
+    「数値でない値」として扱う（型の誤りの指摘になる）。
+    """
     if isinstance(v, bool):
         raise ValueTypeError("boolean is not a number")
     if isinstance(v, (int, float, Decimal)):
-        return Decimal(str(v))
+        return _finite(Decimal(str(v)), v)
     text = _NUM_CLEAN.sub("", str(v)).replace("−", "-").replace("△", "-").replace("▲", "-")
     if text.startswith("(") and text.endswith(")"):  # 会計表記の負数 (1,000)
         text = "-" + text[1:-1]
@@ -31,10 +36,16 @@ def to_number(v: Any) -> Decimal:
     if percent:  # 10% → 0.1（Excel のセルの値と同じ）
         text = text[:-1]
     try:
-        n = Decimal(text)
+        n = _finite(Decimal(text), v)
         return n / 100 if percent else n
     except InvalidOperation as e:
         raise ValueTypeError(f"not a number: {v!r}") from e
+
+
+def _finite(n: Decimal, original: Any) -> Decimal:
+    if not n.is_finite():
+        raise ValueTypeError(f"not a finite number: {original!r}")
+    return n
 
 
 def to_date(v: Any) -> dt.date:

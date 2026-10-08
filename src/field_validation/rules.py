@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import math
 import operator
 import re
 from collections.abc import Iterable, Iterator
@@ -116,6 +117,14 @@ def condition_fields(cond: dict[str, Any] | None) -> set[str]:
     for c in cond.get("all", []) + cond.get("any", []):
         out |= condition_fields(c)
     return out
+
+
+def _reject_non_finite(spec: dict[str, Any], *keys: str) -> None:
+    """ルールの定数に NaN / Infinity（YAML の .nan・.inf）を書いたら、ルールの誤り（終了コード 2）にする."""
+    for k in keys:
+        v = spec.get(k)
+        if isinstance(v, float) and not math.isfinite(v):
+            raise ValueError(f"{k} に有限でない数（{v}）は使えません")
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +223,7 @@ class Range(Rule):
     def setup(self):
         if "min" not in self.spec and "max" not in self.spec:
             raise ValueError("range には min か max のどちらかが必要です")
+        _reject_non_finite(self.spec, "min", "max")
         self.lo = comparable(self.spec["min"]) if "min" in self.spec else None
         self.hi = comparable(self.spec["max"]) if "max" in self.spec else None
 
@@ -357,6 +367,7 @@ class Compare(Rule):
     def setup(self):
         if ("right" in self.spec) == ("value" in self.spec):
             raise ValueError("compare には right（項目）か value（定数）のどちらか一方を指定します")
+        _reject_non_finite(self.spec, "value")
 
     def check(self, loc, rec):
         left_f, op = self.spec["left"], self.spec["op"]
