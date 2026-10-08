@@ -282,7 +282,10 @@ class ConvertTest(Base):
         bindir = self.tmp / "bin"
         bindir.mkdir()
         report_obj = {"findings": findings}
-        script = bindir / "doc2md"
+        # POSIX は #! 付きのスクリプト、Windows は doc2md.cmd から Python のスクリプトを呼ぶ
+        script = bindir / ("doc2md.py" if os.name == "nt" else "doc2md")
+        if os.name == "nt":
+            (bindir / "doc2md.cmd").write_text(f'@"{_sys.executable}" "%~dp0doc2md.py" %*\r\n', encoding="utf-8")
         script.write_text(
             f"#!{_sys.executable}\n"
             "import json, pathlib, sys\n"

@@ -8,10 +8,11 @@ from pathlib import Path
 import yaml
 from devtools_common.report import Finding, Severity
 
+from field_validation.mdtable import markdown_tables
+
 from .checks import Catalog
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.M)
-_TABLE_HEAD = re.compile(r"^\|(.+)\|\s*\n\|(?:\s*:?-{3,}:?\s*\|)+\s*$", re.M)
 
 SEVERITY_MAP = {"MUST": Severity.ERROR, "WANT": Severity.WARNING, "NITS": Severity.INFO}
 
@@ -34,11 +35,12 @@ def _norm(s: str) -> str:
 
 
 def table_headers(text: str) -> list[list[str]]:
-    return [[_norm(c) for c in m.group(1).split("|")] for m in _TABLE_HEAD.finditer(text)]
+    """表の見出し行（列名）. 表の読み取りは fieldcheck と同じパーサ（field_validation.mdtable）を使う."""
+    return [[_norm(c) for c in header] for _, header, _ in markdown_tables(text)]
 
 
 def run(path: Path, doc_type: str, catalog: Catalog) -> list[Finding]:
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")  # BOM 付きでも Front Matter を読めるように
     fm = front_matter(text)
     headings = [h.group(2) for h in _HEADING.finditer(text)]
     tables = table_headers(text)

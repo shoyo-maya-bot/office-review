@@ -27,6 +27,8 @@ from pathlib import Path
 
 from devtools_common.report import Finding, Severity
 
+from field_validation.mdtable import split_row
+
 from .checks import SEVERITIES, TYPES, Catalog
 from .precheck import front_matter
 
@@ -67,12 +69,13 @@ def normalize(text: str) -> str:
 
 
 def _cells(line: str) -> list[str]:
-    body = line.strip()[1:-1]
-    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", body)]
+    # 区切りは fieldcheck と同じパーサ（field_validation.mdtable）で分ける.
+    # セルの文字は \| だけを戻す（指紋が変わらないよう、ほかのエスケープ・<br> はそのまま残す）
+    return [c.strip().replace("\\|", "|") for c in split_row(line)]
 
 
 def parse(path: Path) -> tuple[list[ReviewItem], list[Finding]]:
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     meta = front_matter(text)
     problems: list[Finding] = []
     loc = path.name
