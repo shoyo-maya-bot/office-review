@@ -28,6 +28,21 @@ from .loaders import open_source
 from .rules import RULE_TYPES
 
 
+def _positive_int(text: str) -> int:
+    """--max-findings: 1 以上の整数. 0・負の数・整数でない値は引数の誤り（UsageError＝終了コード 2）.
+
+    打ち切らないときは指定しない。argparse の型エラー（SystemExit）ではなく UsageError にして、
+    ほかの引数の誤りと同じく run_main で終了コード 2 にする。
+    """
+    try:
+        n = int(text)
+    except ValueError:
+        raise common_cli.UsageError(f"--max-findings には整数を指定してください: {text!r}") from None
+    if n < 1:
+        raise common_cli.UsageError(f"--max-findings は 1 以上です（打ち切らないときは指定しない）: {n}")
+    return n
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="fieldcheck", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -57,7 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="error",
         help="この重大度以上の指摘があれば終了コード 1（既定: error）",
     )
-    v.add_argument("--max-findings", type=int, help="指摘がこの件数に達したら打ち切る")
+    v.add_argument(
+        "--max-findings",
+        type=_positive_int,
+        metavar="N",
+        help="指摘がこの件数（1 以上）に達したら打ち切る。指定しなければ打ち切らない（0・負の数は引数の誤り）",
+    )
     v.add_argument(
         "--dataset",
         action="append",
