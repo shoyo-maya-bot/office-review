@@ -22,6 +22,15 @@ TYPE_NAMES = {
 }
 SEVERITIES = ["MUST", "WANT", "NITS", "Q"]
 ID_RE = re.compile(r"^[A-Z]{2,4}-\d{3}$")
+# machine（harness precheck が確かめる部分）の種類 → 必須のキー
+#   front_matter: keys（Front Matter に要るキーの一覧）
+#   heading: pattern（見出しに当てる正規表現）
+#   table_columns: columns（表に要る列名の一覧）
+MACHINE_KINDS: dict[str, tuple[str, ...]] = {
+    "front_matter": ("keys",),
+    "heading": ("pattern",),
+    "table_columns": ("columns",),
+}
 
 
 @dataclass
@@ -81,10 +90,40 @@ def load(path: Path) -> Catalog:
             errors.append(f"{cid}: role '{raw['role']}' が roles にありません")
         if raw["severity"] not in SEVERITIES[:3]:
             errors.append(f"{cid}: severity は MUST / WANT / NITS のどれかです")
+        if raw.get("machine") is not None:
+            errors += [f"{cid}: machine: {e}" for e in machine_errors(raw["machine"])]
         checks.append(Check(**{k: raw.get(k) for k in Check.__dataclass_fields__}))
     if errors:
         raise UsageError(f"{path} の誤り:\n  " + "\n  ".join(errors))
     return Catalog(roles=roles, checks=checks)
+
+
+def machine_errors(m: Any) -> list[str]:
+    """checks.yaml の machine の誤り（読み込み時に確かめ、precheck の途中で落ちたり黙って飛ばしたりしない）."""
+    if not isinstance(m, dict):
+        return ["kind を持つ mapping にしてください"]
+    kind = m.get("kind")
+    if kind is None:
+        return [f"kind がありません（使える kind: {', '.join(MACHINE_KINDS)}）"]
+    if kind not in MACHINE_KINDS:
+        return [f"kind '{kind}' は使えません（使える kind: {', '.join(MACHINE_KINDS)}）"]
+    need = MACHINE_KINDS[kind]
+    errors = [f"kind {kind} には {k} が必要です" for k in need if k not in m]
+    for k in ("keys", "columns"):
+        if k in need and k in m:
+            v = m[k]
+            if not isinstance(v, list) or not v or not all(isinstance(x, str) and x.strip() for x in v):
+                errors.append(f"{k} は空でない文字列の一覧にしてください")
+    if "pattern" in need and "pattern" in m:
+        p = m["pattern"]
+        if not isinstance(p, str) or not p:
+            errors.append("pattern は空でない文字列（正規表現）にしてください")
+        else:
+            try:
+                re.compile(p)
+            except re.error as e:
+                errors.append(f"pattern が正規表現として不正です: {e}")
+    return errors
 
 
 def render_checklist(catalog: Catalog, doc_type: str) -> str:

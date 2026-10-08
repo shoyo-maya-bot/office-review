@@ -96,6 +96,7 @@ ruff check . && ruff format --check . && pytest
 | 変更 | 以前 | これから |
 |---|---|---|
 | fieldcheck の数値の `NaN`・`Infinity`（`inf` 等） | 比較で落ちる（終了コード 3） | 数値でない値として扱う（`fields` で number と宣言していれば `schema.type`）。ルールの `min`・`max`・`value` に `.nan`・`.inf` はルールの誤り（終了コード 2） |
+| config/checks.yaml の `machine` の誤り（未知の kind、`pattern` などの必須のキーの欠落） | 未知の kind は黙って飛ばす、必須のキーが無いと precheck が終了コード 3 | 読み込み時に設定の誤り（終了コード 2。どのコマンドでも） |
 
 ## 変更点（0.2.0）
 

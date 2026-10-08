@@ -5,6 +5,8 @@
 # - severity: 指摘したときの既定の重要度（MUST 必須 / WANT 推奨 / NITS 軽微）。Q（質問）は観点ではなく個別に付ける
 # - invalid_when: この観点を当てはめてはいけないケース（誤指摘を減らすため。AI はこれに当たる場合は指摘しない）
 # - machine: 機械で確かめられる部分（harness precheck が使う）。無ければ AI と人だけが見る
+#   kind は front_matter（keys が必要）/ heading（pattern が必要）/ table_columns（columns が必要）。
+#   誤り（未知の kind・必須のキーの欠落・不正な正規表現）は読み込み時に設定の誤り（終了コード 2）
 # 観点を足すときは docs/WORKFLOW.md の「チェックリストを育てる」に従い、PR でレビューを受ける
 version: 1
 roles:
