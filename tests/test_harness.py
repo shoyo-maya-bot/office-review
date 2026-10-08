@@ -271,6 +271,106 @@ class FingerprintTest(Base):
         )
 
 
+class FingerprintRoleCheckTest(Base):
+    """指紋にロールと観点（check_id）を含める. 旧指紋（0.2.0 まで）の記録も引き続き結び付く."""
+
+    DUP = "| 7 | API-007 | WANT | infra | 3. 処理 1 | 参照テーブルと検索条件・使うインデックスが書かれていない | 3. 処理 1 | DB を使う API のため該当しない |"
+
+    def add_same_text_other_role(self) -> None:
+        # No 4（dba・API-007）と同じ箇所・同じ本文を、別のロール（infra）が出した
+        p = self.tmp / REVIEW
+        p.write_text(p.read_text(encoding="utf-8").rstrip("\n") + "\n" + self.DUP + "\n", encoding="utf-8")
+
+    def item(self, no: int) -> results.ReviewItem:
+        return next(i for i in results.load_all(self.tmp / "reviews") if i.no == no)
+
+    def test_role_and_check_id_are_part_of_fingerprint(self):
+        self.add_same_text_other_role()
+        a, b = self.item(4), self.item(7)
+        self.assertEqual(a.fingerprint_v1, b.fingerprint_v1)  # 旧指紋では区別できなかった
+        self.assertNotEqual(a.fingerprint, b.fingerprint)
+        other_check = results.ReviewItem(**{**vars(a), "check_id": "NEW"})
+        self.assertNotEqual(a.fingerprint, other_check.fingerprint)
+        # ダッシュボードで別々に判定できる（ラジオボタンの name が別）
+        f = self.tmp / "triage.json"
+        f.write_text(json.dumps({a.fingerprint: "adopted", b.fingerprint: "rejected"}), encoding="utf-8")
+        self.assertEqual(harness(self.tmp, "triage", str(f))[0], 0)
+        res = history.load(self.tmp / "data/history.jsonl", results.load_all(self.tmp / "reviews"))
+        self.assertEqual(res.decisions[a.fingerprint]["decision"], "adopted")
+        self.assertEqual(res.decisions[b.fingerprint]["decision"], "rejected")
+        rec = json.loads((self.tmp / "data/history.jsonl").read_text("utf-8").splitlines()[0])
+        self.assertEqual(rec["fingerprint"], a.fingerprint_v1)  # 読み手（quality-analytics）が引く旧指紋も残す
+        self.assertEqual(rec["fingerprint_v2"], a.fingerprint)
+        harness(self.tmp, "dashboard")
+        html = (self.tmp / "reviews/dashboard.html").read_text("utf-8")
+        self.assertEqual(html.count('type="radio" name="fp:'), 14)
+
+    def v1_record(self, no: int, decision: str) -> dict:
+        it = self.item(no)
+        return {
+            "key": it.key,
+            "fingerprint": it.fingerprint_v1,  # 0.2.0 の harness triage が書いた形（fingerprint_v2 なし）
+            "decision": decision,
+            "check_id": it.check_id,
+            "severity": it.severity,
+            "role": it.role,
+            "doc_type": it.doc_type,
+            "location": it.location,
+            "finding": it.finding,
+            "triaged_at": "2026-10-05",
+        }
+
+    def test_v1_records_still_link_to_the_finding(self):
+        recs = [self.v1_record(1, "adopted"), self.v1_record(4, "rejected")]
+        (self.tmp / "data/history.jsonl").write_text(
+            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in recs), encoding="utf-8"
+        )
+        items = results.load_all(self.tmp / "reviews")
+        res = history.load(self.tmp / "data/history.jsonl", items)
+        self.assertEqual(res.orphans, [])
+        self.assertEqual(res.decisions[self.item(1).fingerprint]["decision"], "adopted")
+        self.assertEqual(res.decisions[self.item(4).fingerprint]["decision"], "rejected")
+        # 別のロールが同じ文の指摘を足しても、旧指紋の判定は記録したロール・観点の指摘に付く
+        self.add_same_text_other_role()
+        res = history.load(self.tmp / "data/history.jsonl", results.load_all(self.tmp / "reviews"))
+        self.assertEqual(res.decisions[self.item(4).fingerprint]["decision"], "rejected")
+        self.assertNotIn(self.item(7).fingerprint, res.decisions)
+        harness(self.tmp, "dashboard")
+        html = (self.tmp / "reviews/dashboard.html").read_text("utf-8")
+        row = next(r for r in html.split("<tr ") if "参照テーブルと検索条件" in r and "dba" in r)
+        self.assertIn('value="rejected" checked', row)
+        # 判定し直す（v2 で記録）と、旧指紋の判定より後の判定が勝つ
+        f = self.tmp / "triage.json"
+        f.write_text(json.dumps({self.item(4).fingerprint: "adopted"}), encoding="utf-8")
+        self.assertEqual(harness(self.tmp, "triage", str(f))[0], 0)
+        res = history.load(self.tmp / "data/history.jsonl", results.load_all(self.tmp / "reviews"))
+        self.assertEqual(res.decisions[self.item(4).fingerprint]["decision"], "adopted")
+        self.assertEqual(len(res.decisions), 2)
+
+    def test_v1_triage_json_is_accepted_unless_ambiguous(self):
+        f = self.tmp / "triage.json"
+        f.write_text(json.dumps({self.item(1).fingerprint_v1: "adopted"}), encoding="utf-8")
+        self.assertEqual(harness(self.tmp, "triage", str(f))[0], 0)
+        self.add_same_text_other_role()
+        f.write_text(json.dumps({self.item(4).fingerprint_v1: "adopted"}), encoding="utf-8")
+        self.assertEqual(harness(self.tmp, "triage", str(f))[0], 2)
+
+    def test_lint_reports_duplicate_findings(self):
+        self.add_same_text_other_role()
+        rc, out = harness(self.tmp, "lint", "-f", "json")
+        self.assertEqual((rc, self.rules(out)), (0, []))  # ロールが違えば重複ではない
+        dup = self.DUP.replace("| 7 |", "| 8 |").replace("| infra |", "| dba |")
+        p = self.tmp / REVIEW
+        p.write_text(p.read_text(encoding="utf-8") + dup + "\n", encoding="utf-8")
+        rc, out = harness(self.tmp, "lint", "-f", "json")
+        self.assertEqual(rc, 1)
+        found = [f for f in json.loads(out)["findings"] if f["rule_id"] == "lint.duplicate"]
+        self.assertEqual(
+            [(f["location"], f["message"][:16]) for f in found],
+            [(f"{Path(REVIEW).name}#8", "No 4 と同じ指摘です（対象・")],
+        )
+
+
 class ConvertTest(Base):
     """doc2md の終了コード: 0 成功（warning があっても 0）/ 1 変換失敗あり / 2 引数・入力の誤り / 3 実行時エラー."""
 

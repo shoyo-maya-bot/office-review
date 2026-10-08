@@ -32,7 +32,9 @@ class Tmp(unittest.TestCase):
 
 class UsesCommonReaderTest(unittest.TestCase):
     def test_office_review_reads_with_the_common_reader(self):
-        self.assertIs(results.ReviewItem, rr.ReviewItem)
+        self.assertTrue(
+            issubclass(results.ReviewItem, rr.ReviewItem)
+        )  # 指紋だけ office-review の版（ロール・観点入り）
         self.assertIs(history.Resolved, rr.ResolvedHistory)
         self.assertIs(precheck.front_matter, rr.front_matter)
         self.assertEqual(results.COLUMNS, rr.COLUMNS)

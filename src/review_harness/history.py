@@ -1,7 +1,10 @@
 """トリアージ結果（採択 / 不採択）の蓄積と、観点ごとの採択率の集計.
 
-- data/history.jsonl に 1 指摘 1 行で追記する。指摘は「指紋」（対象・箇所・指摘の本文のハッシュ）で特定し、
-  同じ指紋は最新で上書き扱い。No（ファイル名#No）は再レビューでずれるので結び付けには使わない
+- data/history.jsonl に 1 指摘 1 行で追記する。指摘は「指紋」（対象・箇所・指摘の本文・ロール・観点のハッシュ。
+  fingerprint_v2）で特定し、同じ指紋は最新で上書き扱い。No（ファイル名#No）は再レビューでずれるので結び付けには使わない
+- fingerprint には旧指紋（対象・箇所・指摘の本文だけ）も書く（quality-analytics などの読み手が引く値）。
+  fingerprint_v2 の無い行（0.2.0 までに記録した行）は、旧指紋が同じ指摘に結び付ける。旧指紋が同じ指摘が複数あるときは、
+  記録したロールと観点が一致するものに結び付ける
 - 旧形式の行（fingerprint なし）は、その No にいまある指摘が同じとき（本文と check_id が一致）だけ引き継ぎ、
   違えば「孤立した判定」として報告する（採択率の集計には数える）
 - 採択率 = 採択 / (採択 + 不採択)。件数が少ないうちは判断しない（min_samples）
@@ -51,13 +54,35 @@ def load_records(path: Path, warn=None) -> list[dict]:
 
 
 def resolve(records: list[dict], items: list[ReviewItem]) -> Resolved:
-    """判定を指紋で引けるようにする. 同じ指紋は後に書いたものが勝つ.
+    """判定を指紋（fingerprint_v2）で引けるようにする. 同じ指紋は後に書いたものが勝つ.
 
-    - fingerprint がある行: その指紋の判定
-    - 旧形式の行（fingerprint なし）: key の No にいまある指摘が同じ指摘のときだけ、その指紋に引き継ぐ。
-      違う指摘になっていれば（再レビューで No がずれた等）孤立した判定として返す
+    - fingerprint_v2 がある行: その指紋の判定
+    - fingerprint（旧指紋）だけの行: 旧指紋が同じいまの指摘の指紋に引き継ぐ（複数あればロールと観点が一致するもの）。
+      いまの指摘に無ければ旧指紋のまま残す（採択率の集計には数える）
+    - どちらも無い行（もっと古い形式。key = ファイル名#No）: key の No にいまある指摘が同じ指摘のときだけ引き継ぎ、
+      違えば孤立した判定として返す
     """
-    return rr.resolve_history(records, items)
+    items = list(items)
+    by_v1: dict[str, list[ReviewItem]] = {}
+    for it in items:
+        by_v1.setdefault(it.fingerprint_v1, []).append(it)
+    upgraded = []
+    for rec in records:
+        if not rec.get("fingerprint_v2") and rec.get("fingerprint"):
+            fp = _upgrade(rec, by_v1.get(rec["fingerprint"], []))
+            rec = {**rec, "fingerprint": fp} if fp else rec
+        elif rec.get("fingerprint_v2"):
+            rec = {**rec, "fingerprint": rec["fingerprint_v2"]}
+        upgraded.append(rec)
+    return rr.resolve_history(upgraded, items)  # 旧形式（fingerprint なし）の結び付けは共通部品と同じ規則
+
+
+def _upgrade(rec: dict, candidates: list[ReviewItem]) -> str | None:
+    """旧指紋の行 → いまの指摘の指紋. 旧指紋が同じ指摘が無い・決められないときは None."""
+    if len(candidates) == 1:
+        return candidates[0].fingerprint
+    same = {c.fingerprint for c in candidates if c.role == rec.get("role") and c.check_id == rec.get("check_id")}
+    return same.pop() if len(same) == 1 else None
 
 
 def load(path: Path, items: list[ReviewItem]) -> Resolved:
@@ -67,22 +92,29 @@ def load(path: Path, items: list[ReviewItem]) -> Resolved:
 def append(path: Path, decisions: dict[str, str], items: list[ReviewItem], *, date: str) -> int:
     """decisions: 指摘の指紋（fp:…）→ adopted / rejected. 書いた件数を返す.
 
-    旧形式の triage.json（ファイル名#No）も受け付ける（いまの reviews/ でその No にある指摘として記録する）。
+    旧指紋（0.2.0 までのダッシュボードが書いた triage.json）と旧形式（ファイル名#No）も受け付ける
+    （旧指紋が同じ指摘が複数あるときは、どれか決められないので誤り）。
     """
-    by_id = {i.fingerprint: i for i in items}
+    by_id: dict[str, ReviewItem | None] = {}
+    for i in items:
+        by_id[i.fingerprint_v1] = None if i.fingerprint_v1 in by_id else i
+    by_id.update({i.fingerprint: i for i in items})
     by_id.update({i.key: i for i in items})
     path.parent.mkdir(parents=True, exist_ok=True)
     recs = []
     for key, decision in sorted(decisions.items()):
         if decision not in DECISIONS:
             raise ValueError(f"{key}: 判定は adopted / rejected です（{decision}）")
+        if key in by_id and by_id[key] is None:
+            raise KeyError(f"{key}: 同じ旧指紋の指摘が複数あります。ダッシュボードを作り直して判定し直してください")
         it = by_id.get(key)
         if it is None:
             raise KeyError(f"{key}: reviews/ に該当する指摘がありません")
         recs.append(
             {
                 "key": it.key,  # 記録した時点の ファイル名#No（quality-analytics が読む）
-                "fingerprint": it.fingerprint,
+                "fingerprint": it.fingerprint_v1,  # 旧指紋（quality-analytics などの読み手が引く値）
+                "fingerprint_v2": it.fingerprint,  # ロール・観点を含めた指紋（harness はこれで結び付ける）
                 "decision": decision,
                 "check_id": it.check_id,
                 "severity": it.severity,

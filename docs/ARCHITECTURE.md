@@ -19,14 +19,24 @@
 ## 判定の結び付け（指紋）
 
 採択 / 不採択の判定は、指摘の **指紋**（`fp:` + 16 桁）で指摘に結び付けます。
-指紋は「対象（Front Matter の target）・箇所・指摘の本文」から作るハッシュで、No やレビュー結果のファイル名には左右されません。
+指紋は「対象（Front Matter の target）・箇所・指摘の本文・ロール・観点（check_id）」から作るハッシュで、
+No やレビュー結果のファイル名には左右されません。別のロール・観点が同じ箇所に同じ文の指摘を出しても、別々に判定できます
+（ロール・観点まで同じ行は `harness lint` が `lint.duplicate` として報告します）。
 全角・半角の違い、空白の数、英字の大小は無視します。再レビューで指摘の順番が変わっても、判定は同じ指摘に付いたままです。
 
-- `data/history.jsonl` の 1 行: `key`（記録した時点の `ファイル名#No`。quality-analytics が読む）、`fingerprint`、`decision`、
+- `data/history.jsonl` の 1 行: `key`（記録した時点の `ファイル名#No`。quality-analytics が読む）、`fingerprint`（旧指紋:
+  対象・箇所・指摘の本文だけ。quality-analytics など devtools-common の共通部品で読む側が引く値）、`fingerprint_v2`（上の指紋）、`decision`、
   `check_id`、`severity`、`role`、`doc_type`、`location`、`finding`、`triaged_at`
 - 同じ指紋の判定が複数あれば、後に書いたものが有効です
 - 箇所か指摘の本文を書き換えると別の指摘として扱います（判定し直してください）
 - ダッシュボードが保存する `triage.json` のキーも指紋です（旧形式の `ファイル名#No` も受け付けます）
+
+### 0.2.0 までの履歴（fingerprint_v2 の無い行）
+
+`fingerprint`（旧指紋）だけの行は、旧指紋が同じいまの指摘に結び付けます。旧指紋が同じ指摘が複数ある
+（別のロール・観点が同じ文の指摘を出した）ときは、記録した `role` と `check_id` が一致する指摘に結び付けます。
+0.2.0 までのダッシュボードが保存した `triage.json`（キーが旧指紋）も `harness triage` で受け付けます
+（旧指紋が同じ指摘が複数あるときは、どれか決められないので終了コード 2。ダッシュボードを作り直してください）。
 
 ### 旧形式の履歴（fingerprint の無い行）
 
