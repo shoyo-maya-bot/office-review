@@ -177,6 +177,12 @@ class DashboardTest(Base):
         self.assertIn("&lt;script&gt;", html)
         self.assertEqual(html.count('type="radio" name="fp:'), 12)
 
+    def test_dest_folder_is_created(self):
+        dest = self.tmp / "out/nested/dash.html"
+        rc, _ = harness(self.tmp, "dashboard", "-d", str(dest))
+        self.assertEqual(rc, 0)
+        self.assertTrue(dest.is_file())
+
 
 def triage_key(root: Path, no: int) -> str:
     """ダッシュボードが triage.json に書くキー（指摘の指紋）."""
