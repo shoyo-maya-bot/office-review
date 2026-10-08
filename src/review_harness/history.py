@@ -12,14 +12,18 @@
 from __future__ import annotations
 
 import json
-import sys
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
-from .results import ReviewItem, normalize
+from devtools_common import review_results as rr
 
-DECISIONS = {"adopted", "rejected"}
+from .results import ReviewItem
+
+# 読み込みと結び付けは devtools-common の共通部品で行う（quality-analytics と同じ規則）
+DECISIONS = rr.HISTORY_DECISIONS
+REQUIRED_KEYS = rr.HISTORY_REQUIRED_KEYS
+Resolved = rr.ResolvedHistory
 
 
 @dataclass
@@ -37,54 +41,13 @@ class Stat:
         return self.adopted / self.total if self.total else None
 
 
-REQUIRED_KEYS = ("decision", "check_id")
-
-
 def load_records(path: Path, warn=None) -> list[dict]:
     """data/history.jsonl の全行（書いた順）.
 
     壊れた行（JSON として読めない・オブジェクトでない・判定や check_id が無い）は、行番号つきで警告して飛ばす
     （1 行の破損で全コマンドが止まらないように）。warn: 警告の出し先（既定は標準エラー）。
     """
-    if not path.is_file():
-        return []
-    warn = warn or (lambda msg: print(msg, file=sys.stderr))
-    out: list[dict] = []
-    for no, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError as e:
-            warn(f"警告: {path.name}:{no} を飛ばしました（JSON として読めません: {e.msg}）")
-            continue
-        if not isinstance(rec, dict) or any(k not in rec for k in REQUIRED_KEYS) or rec["decision"] not in DECISIONS:
-            warn(f"警告: {path.name}:{no} を飛ばしました（decision（adopted / rejected）と check_id が必要です）")
-            continue
-        out.append(rec)
-    return out
-
-
-@dataclass
-class Resolved:
-    """履歴を、いまの指摘に結び付けた結果."""
-
-    decisions: dict[str, dict] = field(default_factory=dict)  # 指紋 → 最新の判定
-    orphans: list[dict] = field(default_factory=list)  # どの指摘にも結び付けられない旧形式の判定
-
-    def all_records(self) -> dict[str, dict]:
-        """集計用: 指紋ごとの最新の判定 + 孤立した旧形式の判定（旧 key ごとに最新）."""
-        out = dict(self.decisions)
-        out.update({"legacy:" + r["key"]: r for r in self.orphans})
-        return out
-
-
-def _legacy_matches(rec: dict, item: ReviewItem) -> bool:
-    """旧形式（key = ファイル名#No）の判定が、いまその No にある指摘と同じものか.
-
-    旧形式は箇所を記録していないので、記録してある指摘の本文と check_id が一致するときだけ同じとみなす。
-    """
-    return normalize(str(rec.get("finding", ""))) == normalize(item.finding) and rec.get("check_id") == item.check_id
+    return rr.load_history(path, warn)
 
 
 def resolve(records: list[dict], items: list[ReviewItem]) -> Resolved:
@@ -94,21 +57,7 @@ def resolve(records: list[dict], items: list[ReviewItem]) -> Resolved:
     - 旧形式の行（fingerprint なし）: key の No にいまある指摘が同じ指摘のときだけ、その指紋に引き継ぐ。
       違う指摘になっていれば（再レビューで No がずれた等）孤立した判定として返す
     """
-    by_key = {i.key: i for i in items}
-    res = Resolved()
-    orphans: dict[str, dict] = {}
-    for rec in records:
-        fp = rec.get("fingerprint")
-        if not fp:
-            item = by_key.get(rec.get("key", ""))
-            if item is None or not _legacy_matches(rec, item):
-                orphans[rec.get("key", "")] = rec
-                continue
-            fp = item.fingerprint
-            orphans.pop(rec.get("key", ""), None)
-        res.decisions[fp] = {**rec, "fingerprint": fp}
-    res.orphans = list(orphans.values())
-    return res
+    return rr.resolve_history(records, items)
 
 
 def load(path: Path, items: list[ReviewItem]) -> Resolved:
