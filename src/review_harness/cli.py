@@ -56,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("lint", help="レビュー結果ファイルの形式を確かめる")
     s.add_argument("paths", nargs="*", type=Path, help="ファイルかフォルダ（既定: reviews/）")
+    s.add_argument(
+        "--fail-if-empty",
+        action="store_true",
+        help="対象のレビュー結果が 0 件なら終了コード 2（CI で何も見ずに通らないように。既定は警告だけ）",
+    )
     common_cli.add_common_args(s)
 
     s = sub.add_parser("dashboard", help="レビュー結果の HTML ダッシュボードを作る")
@@ -140,7 +145,11 @@ def cmd_precheck(root: Path, args) -> int:
 
 
 def _review_files(root: Path, paths: list[Path]) -> list[Path]:
+    """対象のファイル. 存在しないパスは使い方の誤り（終了コード 2）."""
     files: list[Path] = []
+    missing = [p for p in paths or [root / "reviews"] if not p.exists()]
+    if missing:
+        raise common_cli.UsageError("見つかりません: " + ", ".join(str(p) for p in missing))
     for p in paths or [root / "reviews"]:
         files += sorted(p.glob("*_result.md")) if p.is_dir() else [p]
     return files
@@ -149,6 +158,12 @@ def _review_files(root: Path, paths: list[Path]) -> list[Path]:
 def cmd_lint(root: Path, args) -> int:
     catalog = checks.load(root / "config/checks.yaml")
     files = _review_files(root, args.paths)
+    if not files:
+        where = ", ".join(str(p) for p in args.paths) or "reviews/"
+        msg = f"形式を確かめるレビュー結果（*_result.md）がありません: {where}"
+        if args.fail_if_empty:
+            raise common_cli.UsageError(msg + "（--fail-if-empty）")
+        print(f"警告: {msg}（何も確かめていません）", file=sys.stderr)
     findings: list[Finding] = []
     for f in files:
         findings += results.lint(f, catalog)

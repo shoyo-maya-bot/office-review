@@ -90,6 +90,8 @@ ruff check . && ruff format --check . && pytest
 - `[convert]` の doc-to-markdown は、本体と同じ devtools-common の版を固定しているコミットにします（違うと `pip install ".[convert]"` が
   失敗します）。`tests/test_pins.py` と CI の convert ジョブで確かめます
 - CI: Linux と Windows のテスト、`.[convert]` を入れてサンプルを `harness convert`、bandit・pip-audit
+- カバレッジ: CI（Linux）は `coverage run -m pytest` → `coverage report` で下限（`pyproject.toml` の
+  `[tool.coverage.report] fail_under`）を確かめます。手元では `pip install "coverage==7.10.6"` のうえで同じコマンド
 
 ## 変更点（次の版）
 
@@ -97,6 +99,11 @@ ruff check . && ruff format --check . && pytest
 |---|---|---|
 | fieldcheck の数値の `NaN`・`Infinity`（`inf` 等） | 比較で落ちる（終了コード 3） | 数値でない値として扱う（`fields` で number と宣言していれば `schema.type`）。ルールの `min`・`max`・`value` に `.nan`・`.inf` はルールの誤り（終了コード 2） |
 | fieldcheck の `--max-findings 0`・負の数 | 指摘 0 件・終了コード 0（検証していないのに成功に見える） | 引数の誤り（終了コード 2）。1 以上を指定し、打ち切らないときは指定しない |
+| fieldcheck の YAML 入力の引用符の無い値 | YAML の型で読む（`010` が 8、`no` が False、`2026-04-01` が日付） | 文字列のまま読む（CSV・Markdown の表と同じ。数値・日付の解釈は `fields` の型宣言か自動判定）。`null`・`~`・空は空欄 |
+| fieldcheck の JSON Lines のオブジェクトでない行（`[1, 2]` など） | 終了コード 3 | 入力の誤り（終了コード 2、行番号つき） |
+| fieldcheck の expression の巨大な繰り返し（`"x" * 100000000000`） | MemoryError（終了コード 3） | 100 万文字（要素）を超える繰り返し・連結、文字列の `%` 書式は「式を評価できません」の指摘 |
+| `harness lint` の存在しないパス | 終了コード 3 | 使い方の誤り（終了コード 2） |
+| `harness lint` の対象 0 件 | 黙って終了コード 0 | 警告を出す（終了コードは 0 のまま）。`--fail-if-empty` を付けると終了コード 2（CI は付けて実行） |
 | config/checks.yaml の `machine` の誤り（未知の kind、`pattern` などの必須のキーの欠落） | 未知の kind は黙って飛ばす、必須のキーが無いと precheck が終了コード 3 | 読み込み時に設定の誤り（終了コード 2。どのコマンドでも） |
 
 ## 変更点（0.2.0）

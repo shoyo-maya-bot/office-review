@@ -4,11 +4,14 @@ Python の式の構文のうち、次だけを許す（それ以外はルール�
 eval は使わず、構文木をたどって評価する（任意コードは実行できない）。
 
 - 値: 数値・文字列・True/False/None、項目名（日本語可。例: `合計`）、`value("列 名")`（記号や空白を含む列名）
-- 演算: + - * / // % 、比較（== != < <= > >=、連鎖も可）、and / or / not、`x if 条件 else y`、
+- 演算: + - * / // % 、（冪 `**` は使えない）比較（== != < <= > >=、連鎖も可）、and / or / not、`x if 条件 else y`、
   `in` / `not in`（右辺はリスト・タプル・文字列）
 - 関数: abs, round, min, max, len, int, float, str, sum（リスト）,
         blank(x)（空欄か）, date("2026-04-01"), days(日付1, 日付2)（日付1 - 日付2 の日数）,
         year(d), month(d), day(d), startswith(s, p), endswith(s, p), contains(s, p), matches(s, 正規表現)
+
+上限: 文字列・リストの繰り返し（`"x" * n`）と連結（`+`）の結果は MAX_SEQUENCE_LEN（100 万）文字・要素まで、
+`%` は数値の剰余だけ（文字列の % 書式は使えない）。超えると「式を評価できません」の指摘になる（メモリを使い切らない）。
 
 項目の値の型: ルールファイルの `fields` で型を宣言していればその型、無ければ自動判定
 （数値として読めれば数値、日付として読めれば日付、それ以外は文字列）。空欄は None。
@@ -28,13 +31,51 @@ from typing import Any
 
 from .values import ValueTypeError, comparable, is_blank, to_date, to_number, to_text
 
+MAX_SEQUENCE_LEN = 1_000_000  # 文字列・リストの繰り返し・連結の結果の長さの上限
+
+
+class ExpressionError(ValueError):
+    pass
+
+
+def _seq_len(x: Any) -> int | None:
+    return len(x) if isinstance(x, (str, list, tuple)) else None
+
+
+def _check_len(n: int) -> None:
+    if n > MAX_SEQUENCE_LEN:
+        raise ExpressionError(f"文字列・リストが長すぎます（{n:,} > 上限 {MAX_SEQUENCE_LEN:,}）")
+
+
+def _mul(a: Any, b: Any) -> Any:
+    """繰り返し（"x" * n）は結果の長さを先に確かめる（"x" * 100000000000 で MemoryError にしない）."""
+    for seq, count in ((a, b), (b, a)):
+        n = _seq_len(seq)
+        if n is not None and isinstance(count, int):
+            _check_len(n * max(count, 0))
+    return operator.mul(a, b)
+
+
+def _add(a: Any, b: Any) -> Any:
+    na, nb = _seq_len(a), _seq_len(b)
+    if na is not None and nb is not None:
+        _check_len(na + nb)
+    return operator.add(a, b)
+
+
+def _mod(a: Any, b: Any) -> Any:
+    if isinstance(a, (str, bytes)):  # "%0999999999d" % 1 のような書式で巨大な文字列を作らせない
+        raise ExpressionError("% は数値の剰余にだけ使えます（文字列の % 書式は使えません）")
+    return operator.mod(a, b)
+
+
 _BIN: dict[type, Callable[[Any, Any], Any]] = {
-    ast.Add: operator.add,
+    ast.Add: _add,
     ast.Sub: operator.sub,
-    ast.Mult: operator.mul,
+    ast.Mult: _mul,
     ast.Div: operator.truediv,
     ast.FloorDiv: operator.floordiv,
-    ast.Mod: operator.mod,
+    ast.Mod: _mod,
 }
 _CMP: dict[type, Callable[[Any, Any], bool]] = {
     ast.Eq: operator.eq,
@@ -85,10 +126,6 @@ _ALLOWED = (
     ast.IfExp, ast.Call, ast.Name, ast.Load, ast.Constant, ast.List, ast.Tuple,
     *_BIN.keys(), *_CMP.keys(),
 )  # fmt: skip
-
-
-class ExpressionError(ValueError):
-    pass
 
 
 class Expression:
@@ -199,6 +236,8 @@ class Expression:
 
         try:
             return ev(self.tree)
+        except ExpressionError:
+            raise
         except (TypeError, ValueError, ArithmeticError, ValueTypeError) as e:
             raise ExpressionError(f"{type(e).__name__}: {e}") from None
 
@@ -231,4 +270,4 @@ def display_values(rec: Mapping[str, Any], fields: set[str]) -> str:
     return ", ".join(f"{f}={to_text(rec.get(f)) or '(空)'}" for f in sorted(fields))
 
 
-__all__ = ["Expression", "ExpressionError", "FUNCTIONS", "display_values", "dt"]
+__all__ = ["MAX_SEQUENCE_LEN", "Expression", "ExpressionError", "FUNCTIONS", "display_values", "dt"]

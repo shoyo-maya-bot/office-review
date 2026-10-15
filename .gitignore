@@ -9,3 +9,6 @@ __pycache__/
 reviews/dashboard.html
 triage.json
 data/convert-reports/
+.coverage
+.coverage.*
+htmlcov/
