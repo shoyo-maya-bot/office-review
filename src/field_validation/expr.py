@@ -118,8 +118,16 @@ FUNCTIONS: dict[str, Callable[..., Any]] = {
     "startswith": lambda s, p: to_text(s).startswith(p),
     "endswith": lambda s, p: to_text(s).endswith(p),
     "contains": lambda s, p: p in to_text(s),
-    "matches": lambda s, rx: re.search(rx, to_text(s)) is not None,
+    "matches": lambda s, rx: _matches(s, rx),
 }
+
+
+def _matches(s: Any, rx: Any) -> bool:
+    try:
+        return re.search(rx, to_text(s)) is not None
+    except re.error as e:  # 正規表現を項目の値から取るとき. 実行時エラー（終了コード 3）にせず、評価できない指摘にする
+        raise ExpressionError(f"matches() の正規表現が不正です: {rx!r}（{e}）") from None
+
 
 _ALLOWED = (
     ast.Expression, ast.BoolOp, ast.And, ast.Or, ast.UnaryOp, ast.Not, ast.USub, ast.UAdd, ast.BinOp, ast.Compare,
@@ -147,6 +155,13 @@ class Expression:
                     )
                 if node.keywords:
                     raise ExpressionError("関数のキーワード引数は使えません")
+                if node.func.id == "matches" and len(node.args) == 2 and isinstance(node.args[1], ast.Constant):
+                    # 定数の正規表現は読み込み時に確かめる（check-rules で見つかるように. 以前は実行時に終了コード 3）
+                    rx = node.args[1].value
+                    try:
+                        re.compile(str(rx))
+                    except re.error as e:
+                        raise ExpressionError(f"matches() の正規表現が不正です: {rx!r}（{e}）") from None
                 if node.func.id == "value":
                     if len(node.args) != 1 or not isinstance(node.args[0], ast.Constant):
                         raise ExpressionError('value() は value("列名") の形で使います')
