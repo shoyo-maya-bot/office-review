@@ -246,10 +246,24 @@ def _check_columns(columns: Iterable[str], ruleset: RuleSet, origin: str) -> Non
         )
 
 
-def evaluate(source: Source, ruleset: RuleSet, *, max_findings: int | None = None) -> Result:
-    """全レコードを評価する. max_findings: 指摘がこの件数（1 以上）に達したら打ち切る（None なら打ち切らない）."""
+def evaluate(
+    source: Source, ruleset: RuleSet, *, max_findings: int | None = None, fail_on: str | None = None
+) -> Result:
+    """全レコードを評価する. max_findings: 指摘がこの件数（1 以上）に達したら打ち切る（None なら打ち切らない）.
+
+    打ち切るときは重い指摘（error → warning → info）から残す
+    （軽い指摘が重い指摘を押し出して終了コード 0 にならないように）.
+    fail_on（CLI の --fail-on. error / warning / info）を渡すと、上限に達した時点でその重さ以上の指摘がまだ無ければ、
+    それが見つかるまで（または最後まで）続けて評価する（その間はその重さ以上の指摘だけを集める）.
+    finish()（集計系のルール. プラグインなど）の指摘で上限を超えたときも打ち切り（truncated）とする.
+    """
     if max_findings is not None and max_findings < 1:
         raise UsageError(f"--max-findings は 1 以上です（打ち切らないときは指定しない）: {max_findings}")
+    fail_rank = Severity(fail_on).rank if fail_on and fail_on != "never" else None
+
+    def failing(fs: list[Finding]) -> bool:
+        return fail_rank is not None and any(f.severity.rank <= fail_rank for f in fs)
+
     if source.columns is not None:
         _check_columns(source.columns, ruleset, "ヘッダ行")
     # 入力の形の注意（表の行のセル数の過不足など）. CSV は読みながら足されるので、読み終えてから先頭に置く
@@ -260,35 +274,59 @@ def evaluate(source: Source, ruleset: RuleSet, *, max_findings: int | None = Non
         count += 1
         if count == 1 and source.columns is None:
             _check_columns(rec.keys(), ruleset, "先頭レコード")
-        bad_fields: set[str] = set()
-        for fname, fspec in ruleset.fields.items():
-            t = fspec.get("type")
-            v = rec.get(fname)
-            if t and t != "string" and not is_blank(v):
-                try:
-                    coerce(v, t)
-                except ValueTypeError:
-                    bad_fields.add(fname)
-                    findings.append(
-                        Finding(
-                            "schema.type",
-                            Severity.ERROR,
-                            f"{fname} は {t} である必要があります",
-                            location=loc,
-                            field=fname,
-                            expected=t,
-                            actual=to_text(v),
-                        )
-                    )
-        for rule in ruleset.rules:
-            if rule.applies(rec):
-                # 型が不正な項目についての二次的な指摘は出さない（schema.type で報告済み）
-                findings.extend(f for f in rule.check(loc, rec) if f.field not in bad_fields)
+        found = _check_record(loc, rec, ruleset)
+        if truncated:  # 上限に達した後: 終了コードを決める重さの指摘だけを探す
+            found = [f for f in found if fail_rank is not None and f.severity.rank <= fail_rank]
+            findings.extend(found)
+            if found:
+                break
+            continue
+        findings.extend(found)
         if max_findings is not None and len(source.warnings) + len(findings) >= max_findings:
             truncated = True
-            break
+            if fail_rank is None or failing([*source.warnings, *findings]):
+                break
     for rule in ruleset.rules:
         findings.extend(rule.finish())
     findings = [*source.warnings, *findings]
     log.info("evaluated %d records with %d rules: %d findings", count, len(ruleset.rules), len(findings))
-    return Result(findings[:max_findings] if max_findings is not None else findings, count, truncated)
+    if max_findings is not None and len(findings) > max_findings:
+        truncated = True
+        findings = _keep_severe(findings, max_findings)
+    return Result(findings, count, truncated)
+
+
+def _check_record(loc: str, rec: dict[str, Any], ruleset: RuleSet) -> list[Finding]:
+    """1 レコードの指摘（型の誤りと各ルール）."""
+    out: list[Finding] = []
+    bad_fields: set[str] = set()
+    for fname, fspec in ruleset.fields.items():
+        t = fspec.get("type")
+        v = rec.get(fname)
+        if t and t != "string" and not is_blank(v):
+            try:
+                coerce(v, t)
+            except ValueTypeError:
+                bad_fields.add(fname)
+                out.append(
+                    Finding(
+                        "schema.type",
+                        Severity.ERROR,
+                        f"{fname} は {t} である必要があります",
+                        location=loc,
+                        field=fname,
+                        expected=t,
+                        actual=to_text(v),
+                    )
+                )
+    for rule in ruleset.rules:
+        if rule.applies(rec):
+            # 型が不正な項目についての二次的な指摘は出さない（schema.type で報告済み）
+            out.extend(f for f in rule.check(loc, rec) if f.field not in bad_fields)
+    return out
+
+
+def _keep_severe(findings: list[Finding], n: int) -> list[Finding]:
+    """重い指摘から n 件を選び、元の順に並べて返す."""
+    keep = sorted(range(len(findings)), key=lambda i: (findings[i].severity.rank, i))[:n]
+    return [findings[i] for i in sorted(keep)]

@@ -76,7 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-findings",
         type=_positive_int,
         metavar="N",
-        help="指摘がこの件数（1 以上）に達したら打ち切る。指定しなければ打ち切らない（0・負の数は引数の誤り）",
+        help=(
+            "指摘がこの件数（1 以上）に達したら打ち切る"
+            "（重い指摘から残し、--fail-on 以上の指摘が無ければ見つかるまで続ける）。"
+            "指定しなければ打ち切らない（0・負の数は引数の誤り）"
+        ),
     )
     v.add_argument(
         "--dataset",
@@ -128,14 +132,14 @@ def main(argv: list[str] | None = None) -> int:
 
     ruleset = load_ruleset(args.rules, [parse_dataset_arg(d) for d in args.dataset])
     source = open_source(args.input, encoding=args.encoding, table=args.table)
-    result = evaluate(source, ruleset, max_findings=args.max_findings)
+    result = evaluate(source, ruleset, max_findings=args.max_findings, fail_on=args.fail_on)
     meta = {"input": args.input.name, "rules": f"{ruleset.name} ({len(ruleset.rules)})", "records": result.records}
     if args.table:
         meta["table"] = args.table
     if ruleset.datasets:
         meta["datasets"] = ", ".join(ruleset.datasets)
     if result.truncated:
-        meta["truncated"] = f"--max-findings {args.max_findings} で打ち切り"
+        meta["truncated"] = f"--max-findings {args.max_findings} で打ち切り（重い指摘から残す）"
     text = report.render(
         result.findings,
         args.format,

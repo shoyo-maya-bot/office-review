@@ -103,6 +103,8 @@ ruff check . && ruff format --check . && pytest
 | fieldcheck の JSON Lines のオブジェクトでない行（`[1, 2]` など） | 終了コード 3 | 入力の誤り（終了コード 2、行番号つき） |
 | fieldcheck の expression の巨大な繰り返し（`"x" * 100000000000`） | MemoryError（終了コード 3） | 100 万文字（要素）を超える繰り返し・連結、文字列の `%` 書式は「式を評価できません」の指摘 |
 | `harness lint` の存在しないパス | 終了コード 3 | 使い方の誤り（終了コード 2） |
+| fieldcheck の `--max-findings N` で上限を超えたとき | 先に出た N 件を残す（warning が error を押し出して終了コード 0 になりうる）。集計系ルールの `finish()` の分を切り捨てても `truncated` が出ない | 重い指摘（error → warning → info）から N 件を残す。上限に達した時点で `--fail-on` 以上の指摘が無ければ、見つかるまで（または最後まで）評価を続ける（その間は `--fail-on` 以上の指摘だけを集める）。`finish()` の分で超えたときも `truncated` |
+| fieldcheck の expression の `matches(項目, "不正な正規表現")` | `check-rules` を通り、`validate` で終了コード 3 | 式の誤り（`check-rules`・`validate` とも終了コード 2）。正規表現を項目の値から取るときに不正なら「式を評価できません」の指摘 |
 | `harness lint` の対象 0 件 | 黙って終了コード 0 | 警告を出す（終了コードは 0 のまま）。`--fail-if-empty` を付けると終了コード 2（CI は付けて実行） |
 | config/checks.yaml の `machine` の誤り（未知の kind、`pattern` などの必須のキーの欠落） | 未知の kind は黙って飛ばす、必須のキーが無いと precheck が終了コード 3 | 読み込み時に設定の誤り（終了コード 2。どのコマンドでも） |
 
