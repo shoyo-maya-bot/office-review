@@ -8,6 +8,8 @@ Copilot にレビューさせ、人の採択 / 不採択を蓄積して **チェ
 
 ## すぐ使う（3 ステップ）
 
+必要なもの: **Python 3.12 以上**（`pyproject.toml` の `requires-python`）と Git。
+
 1. このリポジトリを clone する
 2. **Windows**: `setup.cmd` をダブルクリック ／ **macOS・Linux**: `./setup.sh`
    （`harness convert` に使う doc-to-markdown も入ります。要らないときは `setup.cmd --no-convert` / `./setup.sh --no-convert`。
@@ -61,11 +63,13 @@ Copilot にレビューさせ、人の採択 / 不採択を蓄積して **チェ
 AI レビューの前の機械チェックとして使います。
 
 ```bash
-fieldcheck validate fieldcheck/samples/expense-list.md -r fieldcheck/samples/rules.yaml --table 経費明細
+fieldcheck validate fieldcheck/samples/expense-list.md -r fieldcheck/samples/rules.yaml --table 申請一覧
 fieldcheck schema > fieldcheck/rules.schema.json      # ルールの JSON Schema（エディタ補完用）
 ```
 
-ルールの書き方と出力形式は [fieldcheck/OUTPUT_SPEC.md](fieldcheck/OUTPUT_SPEC.md) とサンプル（[fieldcheck/samples/](fieldcheck/samples/)）。
+サンプルはわざと誤りを含むので、1 行目は指摘を出して終了コード 1 になります。
+ルールの書き方はサンプル（[fieldcheck/samples/](fieldcheck/samples/)）と JSON Schema（[fieldcheck/rules.schema.json](fieldcheck/rules.schema.json)）、
+出力形式と終了コードは [fieldcheck/OUTPUT_SPEC.md](fieldcheck/OUTPUT_SPEC.md)。
 
 > **カスタムルール（`--plugin` と entry point）は信頼できるものだけ使ってください。** `--plugin my_rules.py` で指定した
 > ファイルと、入っているパッケージの entry point（グループ `field_validation.rules`）は、`fieldcheck validate` のたびに
@@ -78,6 +82,18 @@ fieldcheck schema > fieldcheck/rules.schema.json      # ルールの JSON Schema
 - **Markdown の表**: doc-to-markdown のエスケープ（`\\` `\|` `\<` など。doc-to-markdown の docs/OUTPUT_SPEC.md）を元の文字に戻し、
   `<br>` を改行として読みます。セル数が見出しと合わない行は警告（`input.row_shape`）を出します（足りないセルは空として読み、
   多いセルは読まずに値を警告に出します）
+- **CSV / TSV**: Markdown の表と同じく、セル数が列と合わない行は警告（`input.row_shape`）を出します
+- **数値**: 桁の位置が ±9999 を超える値（`1E+999999999` など）は数値として扱いません（`fields` で number と宣言していれば
+  `schema.type`）。JSON の 4300 桁を超える整数も読めます
+
+## 終了コード
+
+| コード | harness | fieldcheck |
+|---|---|---|
+| 0 | 問題なし（`precheck`・`lint` は warning・info の指摘だけなら 0） | `--fail-on`（既定 error）以上の指摘が無い |
+| 1 | `precheck`・`lint` に error の指摘がある（precheck は MUST の観点の不足）、`checklists --check` で古いチェックリストがある | `--fail-on` 以上の指摘がある |
+| 2 | 引数・設定（`config/checks.yaml`）・入力の誤り（ファイルが無い、文字コードを判別できない、`lint --fail-if-empty` で 0 件、`convert` の入力・外部ソフトの問題） | 引数・ルール・入力の誤り（詳細は [OUTPUT_SPEC.md](fieldcheck/OUTPUT_SPEC.md#終了コード)） |
+| 3 | 想定外のエラー（`convert` の変換の失敗を含む） | 想定外のエラー |
 
 ## 開発
 
@@ -106,6 +122,10 @@ ruff check . && ruff format --check . && pytest
 | fieldcheck の `--max-findings N` で上限を超えたとき | 先に出た N 件を残す（warning が error を押し出して終了コード 0 になりうる）。集計系ルールの `finish()` の分を切り捨てても `truncated` が出ない | 重い指摘（error → warning → info）から N 件を残す。上限に達した時点で `--fail-on` 以上の指摘が無ければ、見つかるまで（または最後まで）評価を続ける（その間は `--fail-on` 以上の指摘だけを集める）。`finish()` の分で超えたときも `truncated` |
 | fieldcheck の expression の `matches(項目, "不正な正規表現")` | `check-rules` を通り、`validate` で終了コード 3 | 式の誤り（`check-rules`・`validate` とも終了コード 2）。正規表現を項目の値から取るときに不正なら「式を評価できません」の指摘 |
 | `harness lint` の対象 0 件 | 黙って終了コード 0 | 警告を出す（終了コードは 0 のまま）。`--fail-if-empty` を付けると終了コード 2（CI は付けて実行） |
+| fieldcheck の桁の大きすぎる数（`1E+999999999`） | 合計・比較で decimal.Overflow（終了コード 3）。表示に 100 万桁近く並ぶことがある | 数値でない値として扱う（`schema.type`）。表示は ±30 桁を超えると指数表記（`1E+40`） |
+| fieldcheck の JSON・JSON Lines の 4300 桁を超える整数 | 終了コード 3 | そのまま数値として読む |
+| fieldcheck の CSV・TSV の列より少ない行 | 黙って空として読む | 空として読み、警告 `input.row_shape`（Markdown の表と同じ） |
+| `harness precheck` の Shift_JIS の Markdown | 終了コード 3 | UTF-8 → Shift_JIS の順に自動（fieldcheck と同じ）。読めなければ終了コード 2 |
 | config/checks.yaml の `machine` の誤り（未知の kind、`pattern` などの必須のキーの欠落） | 未知の kind は黙って飛ばす、必須のキーが無いと precheck が終了コード 3 | 読み込み時に設定の誤り（終了コード 2。どのコマンドでも） |
 
 ## 変更点（0.2.0）
