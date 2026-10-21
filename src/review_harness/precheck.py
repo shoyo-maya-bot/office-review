@@ -5,9 +5,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from devtools_common.cli import UsageError
 from devtools_common.report import Finding, Severity
 from devtools_common.review_results import front_matter
 
+from field_validation.loaders import detect_encoding
 from field_validation.mdtable import markdown_tables
 
 from .checks import Catalog
@@ -26,8 +28,23 @@ def table_headers(text: str) -> list[list[str]]:
     return [[_norm(c) for c in header] for _, header, _ in markdown_tables(text)]
 
 
+def read_document(path: Path) -> str:
+    """対象の Markdown を読む. 文字コードは fieldcheck と同じ（UTF-8（BOM 付き可）→ Shift_JIS（cp932）の順に試す）.
+
+    BOM 付きでも Front Matter を読める. どちらでも読めなければ UsageError（終了コード 2. 以前は終了コード 3）。
+    """
+    try:
+        encoding = detect_encoding(path, None)
+    except UsageError:  # fieldcheck の文は --encoding を案内するが、precheck にその引数は無い
+        raise UsageError(
+            f"{path.name}: 文字コードを判別できません（UTF-8 でも Shift_JIS でもありません）。"
+            "UTF-8 で保存し直してください"
+        ) from None
+    return path.read_text(encoding=encoding)
+
+
 def run(path: Path, doc_type: str, catalog: Catalog) -> list[Finding]:
-    text = path.read_text(encoding="utf-8-sig")  # BOM 付きでも Front Matter を読めるように
+    text = read_document(path)
     fm = front_matter(text)
     headings = [h.group(2) for h in _HEADING.finditer(text)]
     tables = table_headers(text)

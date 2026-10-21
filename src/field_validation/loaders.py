@@ -10,6 +10,9 @@ CSV・Markdown の表と同じく、数値・日付としての解釈は検証�
 `null`・`~`・空の値は空欄（None）。JSON は JSON の型のまま。
 
 JSON Lines: 各行は JSON のオブジェクト（{...}）. それ以外（配列・数値など）は入力の誤り（終了コード 2）。
+JSON の整数: Python の int の文字列変換の上限（4300 桁）を超える整数は Decimal として読む（以前は終了コード 3）。
+
+CSV / TSV: セルが列より多い行・少ない行は警告（input.row_shape）. 少ない行の足りないセルは空として読む。
 
 文字コード: 既定（encoding=None）は UTF-8（BOM 付き可）を試し、読めなければ Shift_JIS（cp932）を試す。
 どちらでも読めなければ使い方の誤り（終了コード 2）にして --encoding を案内する。
@@ -22,6 +25,7 @@ import csv
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +83,18 @@ def _decode_error(path: Path, encoding: str, e: UnicodeDecodeError) -> UsageErro
     )
 
 
+def _json_int(text: str) -> int | Decimal:
+    """JSON の整数. int にできない巨大な整数（4300 桁超. sys.int_info.default_max_str_digits）は Decimal に."""
+    try:
+        return int(text)
+    except ValueError:
+        return Decimal(text)
+
+
+def _json_loads(text: str) -> Any:
+    return json.loads(text, parse_int=_json_int)
+
+
 def _read_text(path: Path, encoding: str) -> str:
     try:
         return path.read_text(encoding=encoding)
@@ -110,6 +126,12 @@ def _csv(path: Path, encoding: str, delimiter: str) -> Source:
                     w = _extra_cells_warning(path, loc, len(columns), extra, hint)
                     log.warning("%s %s（%s / %s）", w.location, w.message, w.expected, w.actual)
                     warnings.append(w)
+                # DictReader は列より少ない行の足りないセルを None（restval）にする. 空のセル（""）とは区別できる
+                present = sum(1 for k in (reader.fieldnames or []) if row.get(k) is not None)
+                if present < len(columns):
+                    w = _missing_cells_warning(path, loc, len(columns), present)
+                    log.warning("%s %s（%s / %s）", w.location, w.message, w.expected, w.actual)
+                    warnings.append(w)
                 yield loc, {k.strip(): v for k, v in row.items()}
         except UnicodeDecodeError as e:
             raise _decode_error(path, encoding, e) from None
@@ -129,6 +151,17 @@ def _check_duplicate_columns(columns: list[str], path: Path) -> None:
             f"{path.name}: 列名が重複しています: {names}（後の列の値で前の列が上書きされるため読みません）。"
             "列名を一意にしてください（例: 金額_1, 金額_2）"
         )
+
+
+def _missing_cells_warning(path: Path, loc: str, n_columns: int, n_cells: int) -> Finding:
+    return Finding(
+        "input.row_shape",
+        Severity.WARNING,
+        f"{path.name}: 表の行のセルが列より少ないため、足りない列を空として読みました",
+        location=loc,
+        expected=f"{n_columns} セル",
+        actual=f"{n_cells} セル",
+    )
 
 
 def _extra_cells_warning(path: Path, loc: str, n_columns: int, extra: list[str], hint: str) -> Finding:
@@ -177,7 +210,7 @@ def _records_from(data: Any, name: str) -> list[dict]:
 def _structured(path: Path, encoding: str) -> Source:
     text = _read_text(path, encoding)
     try:
-        data = json.loads(text) if path.suffix.lower() == ".json" else _load_yaml_as_text(text)
+        data = _json_loads(text) if path.suffix.lower() == ".json" else _load_yaml_as_text(text)
     except (json.JSONDecodeError, yaml.YAMLError) as e:
         raise UsageError(f"{path.name} を解析できません: {e}") from e
     records = _records_from(data, path.name)
@@ -191,7 +224,7 @@ def _jsonl(path: Path, encoding: str) -> Source:
                 for i, line in enumerate(f, 1):
                     if line.strip():
                         try:
-                            obj = json.loads(line)
+                            obj = _json_loads(line)
                         except json.JSONDecodeError as e:
                             raise UsageError(f"{path.name}:{i} JSON を解析できません: {e}") from e
                         if not isinstance(obj, dict):
@@ -231,16 +264,7 @@ def _markdown(path: Path, encoding: str, table: str | None) -> Source:
         loc = f"row {i}"
         if len(r) < len(header):
             # 足りないセルは空として読む（末尾の空のセルを省いた表など）
-            warnings.append(
-                Finding(
-                    "input.row_shape",
-                    Severity.WARNING,
-                    f"{path.name}: 表の行のセルが列より少ないため、足りない列を空として読みました",
-                    location=loc,
-                    expected=f"{len(header)} セル",
-                    actual=f"{len(r)} セル",
-                )
-            )
+            warnings.append(_missing_cells_warning(path, loc, len(header), len(r)))
             r = r + [""] * (len(header) - len(r))
         elif len(r) > len(header):
             extra = r[len(header) :]

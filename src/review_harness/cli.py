@@ -11,7 +11,8 @@
   harness accumulate                                 # 観点ごとの採択率と、観点の追加候補を docs/ に出力
   harness checklists                                 # config/checks.yaml から docs/review-checklists/ を生成
 
-終了コード: 0 問題なし / 1 指摘あり / 2 引数・設定の誤り / 3 実行時エラー
+終了コード: 0 問題なし（warning・info だけなら 0）/ 1 error の指摘あり（precheck は MUST の不足）・checklists --check で古い /
+  2 引数・設定・入力の誤り / 3 実行時エラー（convert の変換の失敗を含む）
 """
 
 from __future__ import annotations
