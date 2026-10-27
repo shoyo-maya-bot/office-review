@@ -1,6 +1,7 @@
 ---
 title: "注文照会 API"
 id: "DOC-API-0101"
+version: "1.0"
 status: review
 ---
 
@@ -8,9 +9,9 @@ status: review
 
 ## 1. 概要
 
-| API ID | メソッド | パス | 内容 |
-|---|---|---|---|
-| API0101 | GET | `/api/v1/orders` | 会員の注文を一覧で返す |
+| API ID | メソッド | パス | 認証 | 内容 |
+|---|---|---|---|---|
+| API0101 | GET | `/api/v1/orders` | 要（会員ログイン） | 会員の注文を一覧で返す |
 
 ## 2. 入力
 

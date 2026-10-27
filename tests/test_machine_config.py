@@ -18,7 +18,7 @@ from review_harness import checks, cli
 
 ROOT = Path(__file__).resolve().parent.parent
 DOC = "inputs/api/order-api.md"
-ORIGINAL = 'machine: { kind: heading, pattern: "概要|API 一覧|一覧" }'
+ORIGINAL = "machine: { kind: table_columns, columns: [ID, メソッド, パス, 認証] }"
 
 
 def harness(root: Path, *args: str) -> tuple[int, str]:

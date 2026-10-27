@@ -23,7 +23,7 @@ TYPE_NAMES = {
 SEVERITIES = ["MUST", "WANT", "NITS", "Q"]
 ID_RE = re.compile(r"^[A-Z]{2,4}-\d{3}$")
 # machine（harness precheck が確かめる部分）の種類 → 必須のキー
-#   front_matter: keys（Front Matter に要るキーの一覧）
+#   front_matter: keys（Front Matter に要るキーの一覧。「a|b」は a か b のどちらかがあればよい）
 #   heading: pattern（見出しに当てる正規表現）
 #   table_columns: columns（表に要る列名の一覧）
 MACHINE_KINDS: dict[str, tuple[str, ...]] = {
@@ -114,6 +114,8 @@ def machine_errors(m: Any) -> list[str]:
             v = m[k]
             if not isinstance(v, list) or not v or not all(isinstance(x, str) and x.strip() for x in v):
                 errors.append(f"{k} は空でない文字列の一覧にしてください")
+            elif k == "keys" and any(not a.strip() for x in v for a in x.split("|")):
+                errors.append("keys の「a|b」の両側には空でないキー名を書いてください")
     if "pattern" in need and "pattern" in m:
         p = m["pattern"]
         if not isinstance(p, str) or not p:

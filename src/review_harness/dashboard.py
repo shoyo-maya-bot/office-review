@@ -72,7 +72,9 @@ def render(items: list[ReviewItem], catalog: Catalog, decided: dict[str, str]) -
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>レビュー結果ダッシュボード</title><style>{_CSS}</style></head><body>
 <h1>レビュー結果ダッシュボード</h1>
-<p>指摘 {len(items)} 件（{summary}）。採択 / 不採択を選んで「トリアージ結果を保存」→ <code>harness triage triage.json</code></p>
+<p>指摘 {len(items)} 件（{summary}）。採択 / 不採択を選んで「トリアージ結果を保存」→ <code>harness triage &lt;保存した triage.json のパス&gt;</code></p>
+<p class="muted">triage.json はブラウザのダウンロードフォルダ（Windows は %USERPROFILE%\\Downloads、macOS は ~/Downloads など）に保存されます。
+同じ名前のファイルがあると「triage (1).json」のように名前が変わるので、保存されたファイル名を確かめてください。</p>
 <h2>分類ごとの件数</h2><div class="wrap"><table><thead><tr><th>分類</th><th>件数</th><th></th></tr></thead><tbody>{cat_rows}</tbody></table></div>
 <h2>指摘一覧（表示中 <span id="count"></span> 件）</h2>
 <div class="filters">{_options(["MUST", "WANT", "NITS", "Q"], "重要度", "sev")}

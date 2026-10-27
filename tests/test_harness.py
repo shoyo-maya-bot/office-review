@@ -90,10 +90,12 @@ class PrecheckTest(Base):
 
     def test_batch_step_heading(self):
         doc = self.tmp / "inputs/batch/job.md"
-        doc.write_text('---\nid: "D"\ntitle: "T"\n---\n# JOB\n## 処理\n', encoding="utf-8")
+        doc.write_text('---\nid: "D"\nversion: "1"\nstatus: review\n---\n# JOB\n## 処理\n', encoding="utf-8")
         _, out = harness(self.tmp, "precheck", str(doc), "--type", "batch", "-f", "json")
         self.assertEqual(self.rules(out), ["BAT-003"])
-        doc.write_text('---\nid: "D"\ntitle: "T"\n---\n# JOB\n### STEP1 入力チェック\n', encoding="utf-8")
+        doc.write_text(
+            '---\nid: "D"\nversion: "1"\nstatus: review\n---\n# JOB\n### STEP1 入力チェック\n', encoding="utf-8"
+        )
         _, out = harness(self.tmp, "precheck", str(doc), "--type", "batch", "-f", "json")
         self.assertEqual(self.rules(out), [])
 
@@ -449,7 +451,7 @@ class ConvertTest(Base):
         self.assertEqual(rc, 0)
         self.assertIn("loss.raw_text", out + err)
         self.assertIn("80%", out + err)
-        rep = self.tmp / "data/convert-reports/api/設計書.json"
+        rep = self.tmp / "data/convert-reports/api/設計書.xlsx.json"
         self.assertTrue(rep.is_file())
         self.assertIn("loss.raw_text", rep.read_text("utf-8"))
         self.assertTrue((self.tmp / "inputs/api/設計書.md").is_file())

@@ -23,6 +23,11 @@ def _norm(s: str) -> str:
     return re.sub(r"[\s*`]", "", s)
 
 
+def key_alternatives(key: str) -> list[str]:
+    """front_matter の keys の 1 項目. 「version|版数」はどちらかがあればよい."""
+    return [a.strip() for a in key.split("|")]
+
+
 def table_headers(text: str) -> list[list[str]]:
     """表の見出し行（列名）. 表の読み取りは fieldcheck と同じパーサ（field_validation.mdtable）を使う."""
     return [[_norm(c) for c in header] for _, header, _ in markdown_tables(text)]
@@ -56,7 +61,9 @@ def run(path: Path, doc_type: str, catalog: Catalog) -> list[Finding]:
         sev = SEVERITY_MAP[c.severity]
         kind = m.get("kind")
         if kind == "front_matter":
-            missing = [k for k in m.get("keys", []) if not fm.get(k)]
+            missing = [
+                k.replace("|", " か ") for k in m.get("keys", []) if not any(fm.get(a) for a in key_alternatives(k))
+            ]
             if missing:
                 findings.append(
                     Finding(

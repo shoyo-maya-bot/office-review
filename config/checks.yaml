@@ -6,6 +6,10 @@
 # - invalid_when: この観点を当てはめてはいけないケース（誤指摘を減らすため。AI はこれに当たる場合は指摘しない）
 # - machine: 機械で確かめられる部分（harness precheck が使う）。無ければ AI と人だけが見る
 #   kind は front_matter（keys が必要）/ heading（pattern が必要）/ table_columns（columns が必要）。
+#   front_matter の keys は「a|b」と書くと a か b のどちらかがあればよい（例 version|版数）。
+#   table_columns の columns は、見出し行の列名に部分一致する列がそれぞれある表を探す（空白・* ・` は無視）。
+#   machine は viewpoint（観点の文）の機械で分かる部分だけを確かめる。keys・columns の語は viewpoint に書く
+#   （tests/test_docs_match_code.py が、観点の文と機械チェックがずれていないかを確かめる）
 #   誤り（未知の kind・必須のキーの欠落・不正な正規表現）は読み込み時に設定の誤り（終了コード 2）
 # 観点を足すときは docs/WORKFLOW.md の「チェックリストを育てる」に従い、PR でレビューを受ける
 version: 1
@@ -24,9 +28,9 @@ checks:
     category: 文書管理
     severity: MUST
     title: 文書 ID・版・承認状態が明記されている
-    viewpoint: Front Matter（または表紙）に id・版数・status があり、改版履歴が最新版と一致している
+    viewpoint: Front Matter（または表紙）に id・版数（version）・status があり、改版履歴が最新版と一致している
     invalid_when: 作成途中のドラフトで、レビュー依頼の時点で status を draft と明示している場合
-    machine: { kind: front_matter, keys: [id, title] }
+    machine: { kind: front_matter, keys: [id, "version|版数", status] }
   - id: ALL-002
     types: [all]
     role: spec_manager
@@ -69,7 +73,7 @@ checks:
     title: API ID・メソッド・パス・認証要否が一覧にある
     viewpoint: 各 API について ID、HTTP メソッド、パス、認証の要否が表で定義されている
     invalid_when: なし
-    machine: { kind: heading, pattern: "概要|API 一覧|一覧" }
+    machine: { kind: table_columns, columns: [ID, メソッド, パス, 認証] }
   - id: API-002
     types: [api]
     role: spec_manager
