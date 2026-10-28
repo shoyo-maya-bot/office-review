@@ -54,13 +54,17 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: 依存を入れる（constraints.txt があれば版をそろえる）
-        shell: bash
-        run: |
-          C=""; [ -f constraints.txt ] && C="-c constraints.txt"
-          pip install $C -e ".[dev]"
-      - run: bash .github/scripts/run.sh pytest -q
-      - run: bash .github/scripts/run.sh harness checklists --check
+      # 利用者と同じ setup.cmd で .venv を作る（setup.cmd 自体の検証を兼ねる。CI では pause しない）.
+      # SETUP_PYTHON で setup-python の Python を使わせる（py ランチャーが別の版を選ばないように）
+      - name: setup.cmd --no-convert（利用者と同じ入れ方）
+        shell: cmd
+        env:
+          SETUP_PYTHON: python
+        run: call setup.cmd --no-convert
+      - run: bash .github/scripts/run.sh .venv/Scripts/python -m pytest -q
+      - run: bash .github/scripts/run.sh .venv/Scripts/harness checklists --check
+      - name: review results are well-formed
+        run: bash .github/scripts/run.sh .venv/Scripts/harness lint --fail-if-empty
 
   # [convert]（doc-to-markdown）が本体と一緒に入るか（devtools-common の版の衝突を検出する）と、harness convert が動くか
   convert:

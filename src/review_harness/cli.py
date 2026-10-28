@@ -2,12 +2,14 @@
 
 流れ:
   harness convert 設計書.xlsx --type api            # Office を Markdown にして inputs/api/ へ（doc-to-markdown が必要。
-                                                    #   変換レポートは data/convert-reports/api/ に残る）
+                                                    #   変換レポートは data/convert-reports/api/設計書.xlsx.json。
+                                                    #   別の元ファイルから作った同名の .md があれば上書きせず終了コード 2）
   harness precheck inputs/api/order-api.md --type api   # 機械で確かめられる観点を先に確かめる
   （Copilot Chat で /review inputs/api/order-api.md → reviews/YYYY-MM-DD_order-api_result.md）
   harness lint reviews/                              # レビュー結果の形式チェック
-  harness dashboard                                  # reviews/dashboard.html（採択 / 不採択を選んで triage.json を保存）
-  harness triage triage.json                         # 判定を data/history.jsonl に蓄積
+  harness dashboard                                  # reviews/dashboard.html（採択 / 不採択を選んで triage.json を保存。
+                                                    #   保存先はブラウザのダウンロードフォルダ）
+  harness triage ~/Downloads/triage.json             # 判定を data/history.jsonl に蓄積
   harness accumulate                                 # 観点ごとの採択率と、観点の追加候補を docs/ に出力
   harness checklists                                 # config/checks.yaml から docs/review-checklists/ を生成
 
@@ -27,6 +29,7 @@ from pathlib import Path
 from devtools_common import cli as common_cli
 from devtools_common import report
 from devtools_common.report import Finding
+from devtools_common.review_results import front_matter
 
 from . import __version__, checks, dashboard, history, precheck, results
 
@@ -102,7 +105,10 @@ def cmd_convert(root: Path, args) -> int:
     import subprocess
 
     dest = root / "inputs" / args.type
-    rep_path = root / "data" / "convert-reports" / args.type / f"{args.file.stem}.json"
+    out = dest / (args.file.stem + ".md")
+    _refuse_other_source(out, args.file, root)
+    # 変換レポートは元ファイル名（拡張子つき）で残す（spec.docx と spec.xlsx のレポートが同じ名前で上書きされないように）
+    rep_path = root / "data" / "convert-reports" / args.type / f"{args.file.name}.json"
     rep_path.parent.mkdir(parents=True, exist_ok=True)
     rc = subprocess.run(
         [doc2md, str(args.file), "-d", str(dest), "--front-matter", "-f", "json", "-o", str(rep_path)], check=False
@@ -117,13 +123,33 @@ def cmd_convert(root: Path, args) -> int:
     warnings = [f for f in findings if f.get("severity") == "warning"]
     for f in warnings:
         print(f"警告: {f.get('rule_id', '')}: {f.get('message', '')}（{f.get('location', '')}）")
-    out = dest / (args.file.stem + ".md")
     rel = rep_path.relative_to(root).as_posix()
     if warnings:
         print(f"→ {out}（警告 {len(warnings)} 件。原本と見比べてからレビューしてください。変換レポート: {rel}）")
     else:
         print(f"→ {out}（変換レポート: {rel}）")
     return common_cli.ExitCode.OK
+
+
+def _refuse_other_source(out: Path, src: Path, root: Path) -> None:
+    """出力先に、別の元ファイル（拡張子違いの同名など）から作った Markdown があれば止める（終了コード 2）.
+
+    doc2md は 1 ファイルの変換では出力名を「元ファイル名の拡張子を除いたもの + .md」にするため、
+    spec.docx と spec.xlsx を順に変換すると後の方で黙って上書きされる。Front Matter の source で判定する。
+    """
+    if not out.is_file():
+        return
+    try:
+        head = out.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return
+    prev = str(front_matter(head).get("source") or "")
+    if prev and prev != src.name:
+        rel = out.relative_to(root).as_posix() if out.is_relative_to(root) else str(out)
+        raise common_cli.UsageError(
+            f"{rel} は別の元ファイル {prev} から変換したものです（{src.name} で上書きしません）。"
+            "元ファイルの名前を変えて変換するか、不要なら既存の Markdown を移動・削除してから変換してください"
+        )
 
 
 def _convert_findings(path: Path) -> list[dict]:
@@ -184,6 +210,11 @@ def cmd_dashboard(root: Path, args) -> int:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(dashboard.render(items, catalog, decided), encoding="utf-8", newline="\n")
     print(f"→ {dest}（{len(items)} 件）")
+    print(
+        "  ブラウザで開き、採択 / 不採択を選んで「トリアージ結果を保存」→ triage.json はブラウザのダウンロードフォルダ"
+        "（Windows は %USERPROFILE%\\Downloads、macOS は ~/Downloads など）に保存されます。"
+        "\n  次は harness triage <保存した triage.json のパス>（例: harness triage ~/Downloads/triage.json）"
+    )
     _report_orphans(hist)
     return common_cli.ExitCode.OK
 

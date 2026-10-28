@@ -20,12 +20,12 @@ Copilot にレビューさせ、人の採択 / 不採択を蓄積して **チェ
 
 | 手順 | やること | コマンド / 操作 |
 |---|---|---|
-| 1 準備 | Office の原本を Markdown にして `inputs/<種別>/` に置く | `harness convert 設計書.xlsx --type api`（doc-to-markdown を使う） |
-| 2 事前チェック | 機械で分かる不足（Front Matter・必須の見出し・表の列）を先に潰す | `harness precheck inputs/api/x.md --type api` |
+| 1 準備 | Office の原本を Markdown にして `inputs/<種別>/` に置く（変換レポートは `data/convert-reports/<種別>/<元ファイル名>.json`） | `harness convert 設計書.xlsx --type api`（doc-to-markdown を使う） |
+| 2 事前チェック | 機械で分かる不足（Front Matter の id・version（版数）・status、必須の見出し、表の列）を先に潰す | `harness precheck inputs/api/x.md --type api` |
 | 3 AI レビュー | 5 ロールの順にチェックリストで確かめ、結果を表で出す | Copilot Chat で `/review inputs/api/x.md` |
 | 4 形式チェック | 結果（`reviews/*_result.md`）の形式を確かめる | `harness lint` |
-| 5 トリアージ | ダッシュボードで指摘ごとに採択 / 不採択を選ぶ | `harness dashboard` → `reviews/dashboard.html` を開く |
-| 6 蓄積 | 判定を記録し、観点ごとの採択率と追加候補を出す | `harness triage triage.json` → `harness accumulate` |
+| 5 トリアージ | ダッシュボードで指摘ごとに採択 / 不採択を選び「トリアージ結果を保存」。`triage.json` は**ブラウザのダウンロードフォルダ**（Windows は `%USERPROFILE%\Downloads`、macOS は `~/Downloads` など）に保存される | `harness dashboard` → `reviews/dashboard.html` を開く |
+| 6 蓄積 | 判定を記録し、観点ごとの採択率と追加候補を出す | `harness triage ~/Downloads/triage.json`（保存したパス）→ `harness accumulate` |
 | 7 育てる | 誤指摘の多い観点を直し、繰り返し出る新しい指摘を観点にする | Copilot Chat で `/review-improve` → `config/checks.yaml` を PR |
 
 詳細は [docs/WORKFLOW.md](docs/WORKFLOW.md)、仕組みは [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
@@ -92,7 +92,7 @@ fieldcheck schema > fieldcheck/rules.schema.json      # ルールの JSON Schema
 |---|---|---|
 | 0 | 問題なし（`precheck`・`lint` は warning・info の指摘だけなら 0） | `--fail-on`（既定 error）以上の指摘が無い |
 | 1 | `precheck`・`lint` に error の指摘がある（precheck は MUST の観点の不足）、`checklists --check` で古いチェックリストがある | `--fail-on` 以上の指摘がある |
-| 2 | 引数・設定（`config/checks.yaml`）・入力の誤り（ファイルが無い、文字コードを判別できない、`lint --fail-if-empty` で 0 件、`convert` の入力・外部ソフトの問題） | 引数・ルール・入力の誤り（詳細は [OUTPUT_SPEC.md](fieldcheck/OUTPUT_SPEC.md#終了コード)） |
+| 2 | 引数・設定（`config/checks.yaml`）・入力の誤り（ファイルが無い、文字コードを判別できない、`lint --fail-if-empty` で 0 件、`convert` の入力・外部ソフトの問題、`convert` で別の元ファイルから作った同名の Markdown がある） | 引数・ルール・入力の誤り（詳細は [OUTPUT_SPEC.md](fieldcheck/OUTPUT_SPEC.md#終了コード)） |
 | 3 | 想定外のエラー（`convert` の変換の失敗を含む） | 想定外のエラー |
 
 ## 開発
@@ -126,6 +126,11 @@ ruff check . && ruff format --check . && pytest
 | fieldcheck の JSON・JSON Lines の 4300 桁を超える整数 | 終了コード 3 | そのまま数値として読む |
 | fieldcheck の CSV・TSV の列より少ない行 | 黙って空として読む | 空として読み、警告 `input.row_shape`（Markdown の表と同じ） |
 | `harness precheck` の Shift_JIS の Markdown | 終了コード 3 | UTF-8 → Shift_JIS の順に自動（fieldcheck と同じ）。読めなければ終了コード 2 |
+| `harness precheck` の ALL-001（文書 ID・版・承認状態） | Front Matter の `id`・`title` を確かめていた（観点の文の「版数」「status」と食い違い） | 観点の文どおり `id`・`version`（または `版数`）・`status` を確かめる。`title` は見ない。doc2md の Front Matter には version・status が無いので書き足す |
+| `harness precheck` の API-001（API ID・メソッド・パス・認証） | 見出しに「概要」「一覧」を含めば通っていた（ほぼ何でも通る） | 列 ID・メソッド・パス・認証 を持つ表があるかを確かめる（API-002 と同じ表の列のチェック） |
+| `harness convert` の変換レポートの名前 | `data/convert-reports/<種別>/<拡張子を除いた名前>.json`（`spec.docx` と `spec.xlsx` で上書き） | `data/convert-reports/<種別>/<元ファイル名>.json`（`spec.docx.json`・`spec.xlsx.json`） |
+| `harness convert` で、別の元ファイルから作った同名の Markdown があるとき | 警告を出して上書き | 上書きせずに終了コード 2（元ファイルの名前を変えるか、既存の Markdown を移動・削除してから変換） |
+| `harness dashboard` の triage.json の保存先 | 案内なし | ダッシュボードとコマンドの出力で、ブラウザのダウンロードフォルダに保存されることと次のコマンドを案内 |
 | config/checks.yaml の `machine` の誤り（未知の kind、`pattern` などの必須のキーの欠落） | 未知の kind は黙って飛ばす、必須のキーが無いと precheck が終了コード 3 | 読み込み時に設定の誤り（終了コード 2。どのコマンドでも） |
 
 ## 変更点（0.2.0）

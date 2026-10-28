@@ -10,7 +10,7 @@
 | 判断基準 | `docs/references/` | 社内標準・上位文書・外部仕様・用語集 |
 | 結果 | `reviews/*_result.md` | AI レビューの結果（表形式。harness lint で検査） |
 | 履歴 | `data/history.jsonl` | 指摘ごとの採択 / 不採択（指摘の指紋で特定。下の「判定の結び付け」） |
-| 変換レポート | `data/convert-reports/<種別>/` | harness convert の変換レポート（doc2md の JSON。警告 loss.* 等を残す） |
+| 変換レポート | `data/convert-reports/<種別>/<元ファイル名>.json` | harness convert の変換レポート（doc2md の JSON。警告 loss.* 等を残す。`spec.xlsx` なら `spec.xlsx.json`） |
 | 集計 | `docs/adoption.md`、`docs/check-candidates.md` | 採択率と観点の追加候補 |
 | 道具 | `src/review_harness/`（harness）、`src/field_validation/`（fieldcheck） | 事前チェック・形式チェック・ダッシュボード・蓄積、表の項目間検証 |
 
